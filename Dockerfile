@@ -4,10 +4,10 @@ FROM debian:bookworm-slim
 
 # Parameterize tool versions for easier updates
 ARG NVM_VERSION=v0.40.1
-ARG JAVA_11_VERSION=11.0.25-tem
-ARG JAVA_17_VERSION=17.0.13-tem
-ARG JAVA_21_VERSION=21.0.5-tem
-ARG JAVA_25_VERSION=25.0.3-tem
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8' \
+    JAVA_VERSION=21.0.11-tem \
+    JAVA_HOME=/opt/java/openjdk \
+    PATH="/opt/java/openjdk/bin:$PATH"
 
 # Install base dependencies and useful CLI tools for coding agents
 RUN apt-get update && apt-get install -y \
@@ -31,6 +31,15 @@ RUN apt-get update && apt-get install -y \
     procps \
     tmux \
     lsof \
+    tzdata \
+    p11-kit \
+    fontconfig \
+    locales \
+    binutils \
+    bc \
+    tini \
+    xz-utils \ 
+    bzip2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI only (uses host Docker daemon via mounted socket)
@@ -51,16 +60,15 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 RUN useradd -m -s /bin/bash -u 1000 coder && \
     echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install SDKMAN and Java LTS versions (11, 17, 21) as coder user; default is 21
+# Install SDKMAN and Java as coder user
 USER coder
 WORKDIR /home/coder
 RUN curl -s "https://get.sdkman.io" | bash && \
     bash -c "source /home/coder/.sdkman/bin/sdkman-init.sh && \
-    sdk install java ${JAVA_11_VERSION} && \
-    sdk install java ${JAVA_17_VERSION} && \
-    sdk install java ${JAVA_21_VERSION} && \
-    sdk install java ${JAVA_25_VERSION} && \
-    sdk default java ${JAVA_21_VERSION}"
+    sdk install java ${JAVA_VERSION} && \
+    sdk default java ${JAVA_VERSION} && \
+    sdk install sbt && \
+    sdk install scala 2.13.18"
 
 # Install NVM and Node.js LTS as coder user
 ENV NVM_DIR="/home/coder/.nvm"
@@ -73,7 +81,11 @@ RUN curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/instal
 
 # Install uv (Python package manager) as coder user
 # See: https://docs.astral.sh/uv/getting-started/installation/
+ENV UV_PROJECT_ENVIRONMENT=/home/coder/.venv
+ENV PATH="${UV_PROJECT_ENVIRONMENT}/bin:/home/coder/.local/bin:$PATH"
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN uv python install && \
+    uv venv ${UV_PROJECT_ENVIRONMENT}
 
 # Install ast-grep for AST-aware code search/replace (used by oh-my-opencode)
 # The npm package @ast-grep/cli provides the 'ast-grep' and 'sg' binaries
