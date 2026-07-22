@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # This script runs as root and handles UID/GID mapping before switching to coder user
 
@@ -90,6 +90,8 @@ if [ "${OPENSPEC_SUPPORT:-false}" = "true" ]; then
             bash -c "source \$NVM_DIR/nvm.sh && cd \"$WORKDIR\" && openspec update" 2>/dev/null || true
     fi
 fi
+
+pumlsrv-server &
 
 # Use setpriv to drop privileges and exec the command as the mapped user
 # cd into the project working directory before executing

@@ -4,8 +4,7 @@ FROM debian:bookworm-slim
 
 # Parameterize tool versions for easier updates
 ARG NVM_VERSION=v0.40.1
-ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8' \
-    JAVA_VERSION=21.0.11-tem \
+ENV JAVA_VERSION=21.0.11-tem \
     JAVA_HOME=/opt/java/openjdk \
     PATH="/opt/java/openjdk/bin:$PATH"
 
@@ -40,7 +39,12 @@ RUN apt-get update && apt-get install -y \
     tini \
     xz-utils \ 
     bzip2 \
+    graphviz \
+    xxd \
     && rm -rf /var/lib/apt/lists/*
+# graphviz and xxd needed by plantuml
+
+RUN update-locale 
 
 # Install Docker CLI only (uses host Docker daemon via mounted socket)
 # We don't need docker-ce (daemon) or containerd.io since we use the host's Docker
@@ -82,10 +86,15 @@ RUN curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/instal
 # Install uv (Python package manager) as coder user
 # See: https://docs.astral.sh/uv/getting-started/installation/
 ENV UV_PROJECT_ENVIRONMENT=/home/coder/.venv
-ENV PATH="${UV_PROJECT_ENVIRONMENT}/bin:/home/coder/.local/bin:$PATH"
+ENV LOCAL_BIN=/home/coder/.local/bin
+ENV PATH="${UV_PROJECT_ENVIRONMENT}/bin:$LOCAL_BIN:$PATH"
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 RUN uv python install && \
     uv venv ${UV_PROJECT_ENVIRONMENT}
+
+# graphify is used by the graphify skill
+RUN uv tool install graphifyy
+RUN uv pip install pytest
 
 # Install ast-grep for AST-aware code search/replace (used by oh-my-opencode)
 # The npm package @ast-grep/cli provides the 'ast-grep' and 'sg' binaries
@@ -100,8 +109,13 @@ ENV BUN_INSTALL="/home/coder/.bun"
 
 # Add nvm, node, sdkman, uv, bun, and ast-grep to PATH
 # Node.js is available via the NVM default symlink created above
-ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:$PATH"
+ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.sdkman/candidates/java/current/bin:$PATH"
 ENV JAVA_HOME="/home/coder/.sdkman/candidates/java/current"
+
+# install pumlsrv-server + pumlcli for plantuml diagram handling
+ENV PUMLSRV_PORT=8380
+# install pumlsrv
+RUN curl -sSL https://raw.githubusercontent.com/michael72/pumlsrv/master/get.sh | bash
 
 # Install OpenCode and OpenSpec globally
 # OpenSpec: Spec-driven development (SDD) for AI coding assistants
