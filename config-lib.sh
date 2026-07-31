@@ -72,6 +72,8 @@ declare -a VOLUME_ARGS=()        # Array of standard volume mount arguments (pop
 declare -a GIT_WORKTREE_ARGS=()  # Array of docker args for git worktree support (populated by build_git_worktree_args)
 SSH_AGENT_SUPPORT=false          # Boolean flag for SSH agent forwarding support
 OPENSPEC_SUPPORT=false           # Boolean flag for OpenSpec (spec-driven development) support
+LLM_INTERCEPTOR_SUPPORT=false    # Boolean flag for routing LLM traffic through a host-side 'lli watch'
+LLM_INTERCEPTOR_PORT=9090        # Port the host-side 'lli watch' proxy listens on
 
 # ============================================
 # SHARED HELPERS
@@ -214,6 +216,8 @@ build_common_docker_args() {
         -e "HOST_GID=$(id -g)"
         -e "TERM=${TERM:-xterm-256color}"
         -e "OPENSPEC_SUPPORT=$OPENSPEC_SUPPORT"
+        -e "LLM_INTERCEPTOR_SUPPORT=$LLM_INTERCEPTOR_SUPPORT"
+        -e "LLM_INTERCEPTOR_PORT=$LLM_INTERCEPTOR_PORT"
     )
 
     # Pass terminal identification variables so applications inside the container
@@ -287,6 +291,20 @@ build_standard_volume_args() {
         config_info "OpenSpec config directory mounted"
     fi
 
+    # mitmproxy CA directory (only when LLM interception is enabled)
+    # The CA is generated on the host by 'lli watch'; entrypoint.sh installs it into
+    # the container's trust store at startup. Mounting it (rather than baking a CA
+    # into the image) keeps a single CA shared by host and container.
+    if [ "$LLM_INTERCEPTOR_SUPPORT" = true ]; then
+        if [ -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]; then
+            VOLUME_ARGS+=(-v "$HOME/.mitmproxy:/home/coder/.mitmproxy:ro")
+            config_info "LLM interception enabled — mitmproxy CA mounted, proxy expected on 127.0.0.1:$LLM_INTERCEPTOR_PORT"
+        else
+            config_warning "LLM interception enabled but no CA at $HOME/.mitmproxy/mitmproxy-ca-cert.pem"
+            config_info "Run 'lli watch' once on the host to generate it, then relaunch"
+        fi
+    fi
+
     # MCP authentication directory (optional)
     if [ -d "$HOME/.mcp-auth" ]; then
         VOLUME_ARGS+=(-v "$HOME/.mcp-auth:/home/coder/.mcp-auth:ro")
@@ -341,6 +359,14 @@ init_config_file() {
 # See: https://github.com/Fission-AI/OpenSpec/
 # setting.openspec_support=false
 
+# LLM traffic interception (llm-interceptor / mitmproxy)
+# Run 'lli watch' on the HOST — the container reaches it via --network host.
+# When enabled, ~/.mitmproxy is mounted read-only and its CA is trusted inside the
+# container, and HTTP_PROXY/HTTPS_PROXY are pointed at 127.0.0.1:<port>.
+# See: https://pypi.org/project/llm-interceptor/
+# setting.llm_interceptor_support=false
+# setting.llm_interceptor_port=9090
+
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
 # Examples:
@@ -391,6 +417,8 @@ load_config() {
     # Read settings (lines starting with "setting.")
     SSH_AGENT_SUPPORT=false
     OPENSPEC_SUPPORT=false
+    LLM_INTERCEPTOR_SUPPORT=false
+    LLM_INTERCEPTOR_PORT=9090
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ "$key" =~ ^[[:space:]]*setting\. ]] || continue
@@ -399,6 +427,8 @@ load_config() {
         value="${value%"${value##*[![:space:]]}"}"
         [[ "$key" =~ ssh_agent_support ]] && [[ "$value" == "true" ]] && SSH_AGENT_SUPPORT=true
         [[ "$key" =~ openspec_support ]] && [[ "$value" == "true" ]] && OPENSPEC_SUPPORT=true
+        [[ "$key" =~ llm_interceptor_support ]] && [[ "$value" == "true" ]] && LLM_INTERCEPTOR_SUPPORT=true
+        [[ "$key" =~ llm_interceptor_port ]] && [[ "$value" =~ ^[0-9]+$ ]] && LLM_INTERCEPTOR_PORT="$value"
     done < "$CONFIG_FILE"
 
     return 0
@@ -421,6 +451,13 @@ save_config() {
         echo "# When enabled, OpenSpec is available inside the container for spec-driven workflows"
         echo "# See: https://github.com/Fission-AI/OpenSpec/"
         echo "setting.openspec_support=$OPENSPEC_SUPPORT"
+        echo ""
+        echo "# LLM traffic interception (llm-interceptor / mitmproxy)"
+        echo "# Run 'lli watch' on the HOST; the container reaches it over --network host."
+        echo "# Mounts ~/.mitmproxy read-only and trusts the CA inside the container."
+        echo "# See: https://pypi.org/project/llm-interceptor/"
+        echo "setting.llm_interceptor_support=$LLM_INTERCEPTOR_SUPPORT"
+        echo "setting.llm_interceptor_port=$LLM_INTERCEPTOR_PORT"
         echo ""
         echo "# Custom volume mounts (read-only by default)"
         echo "# Format: mount.<name>=<host_path>:<container_path>[:rw]"
@@ -825,6 +862,57 @@ prompt_openspec_support() {
     fi
 }
 
+# Interactive LLM interceptor prompt
+# If LLM_INTERCEPTOR_SUPPORT is already set (from a previous config), show current
+# value and only ask if user wants to change it
+prompt_llm_interceptor_support() {
+    echo ""
+    config_info "LLM Traffic Interception (https://pypi.org/project/llm-interceptor/)"
+
+    if [ "$LLM_INTERCEPTOR_SUPPORT" = true ]; then
+        config_success "LLM interception is currently enabled (port $LLM_INTERCEPTOR_PORT)"
+        read -r -p "Keep LLM interception enabled? (Y/n): " lli
+        if [[ "$lli" =~ ^[Nn]$ ]]; then
+            LLM_INTERCEPTOR_SUPPORT=false
+            config_info "LLM interception disabled"
+            return
+        fi
+        config_success "LLM interception remains enabled"
+    else
+        echo "Captures the prompts and responses OpenCode exchanges with LLM providers."
+        echo "You run 'lli watch' on the HOST in a separate terminal — the container"
+        echo "reaches it on loopback because it already runs with --network host."
+        echo "When enabled, ~/.mitmproxy is mounted read-only, its CA is trusted inside"
+        echo "the container, and HTTP_PROXY/HTTPS_PROXY point at the proxy."
+        echo ""
+        echo "Requires 'lli' on the host: uv tool install llm-interceptor"
+        echo ""
+
+        read -r -p "Enable LLM traffic interception? (y/N): " lli
+        if [[ ! "$lli" =~ ^[Yy]$ ]]; then
+            LLM_INTERCEPTOR_SUPPORT=false
+            config_info "LLM interception disabled"
+            return
+        fi
+        LLM_INTERCEPTOR_SUPPORT=true
+        config_success "LLM interception enabled"
+    fi
+
+    read -r -p "Proxy port [$LLM_INTERCEPTOR_PORT]: " lli_port
+    if [ -n "$lli_port" ]; then
+        if [[ "$lli_port" =~ ^[0-9]+$ ]] && [ "$lli_port" -ge 1 ] && [ "$lli_port" -le 65535 ]; then
+            LLM_INTERCEPTOR_PORT="$lli_port"
+        else
+            config_warning "Invalid port '$lli_port' — keeping $LLM_INTERCEPTOR_PORT"
+        fi
+    fi
+
+    if [ ! -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]; then
+        config_warning "No mitmproxy CA found at $HOME/.mitmproxy/mitmproxy-ca-cert.pem"
+        config_info "Run 'lli watch' once on the host to generate it"
+    fi
+}
+
 # Print current configuration (for debugging/info)
 print_config() {
     echo ""
@@ -832,6 +920,7 @@ print_config() {
     echo "  Config file: $CONFIG_FILE"
     echo "  SSH agent forwarding: $SSH_AGENT_SUPPORT"
     echo "  OpenSpec support: $OPENSPEC_SUPPORT"
+    echo "  LLM interception: $LLM_INTERCEPTOR_SUPPORT (port $LLM_INTERCEPTOR_PORT)"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
         echo ""
@@ -876,6 +965,7 @@ interactive_config_setup() {
             [ "$CONFIG_MODE" = "append" ] && load_config
             prompt_ssh_agent_support
             prompt_openspec_support
+            prompt_llm_interceptor_support
             prompt_custom_mounts
             prompt_env_vars
             save_config
@@ -886,9 +976,10 @@ interactive_config_setup() {
             if [[ "$setup_custom" =~ ^[Yy]$ ]]; then
                 prompt_ssh_agent_support
                 prompt_openspec_support
+                prompt_llm_interceptor_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

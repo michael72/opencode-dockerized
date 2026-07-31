@@ -91,6 +91,51 @@ if [ "${OPENSPEC_SUPPORT:-false}" = "true" ]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# LLM traffic interception (opt-in via setting.llm_interceptor_support)
+#
+# 'lli watch' runs on the HOST — containers use --network host, so the proxy is
+# reachable on loopback. All this needs to do is (a) trust the host's mitmproxy
+# CA and (b) export the proxy variables for the process we exec below.
+# ---------------------------------------------------------------------------
+if [ "${LLM_INTERCEPTOR_SUPPORT:-false}" = "true" ]; then
+    LLI_PORT="${LLM_INTERCEPTOR_PORT:-9090}"
+    LLI_CA="/home/coder/.mitmproxy/mitmproxy-ca-cert.pem"
+
+    # Trusting the CA must happen here, as root, before privileges are dropped.
+    if [ -f "$LLI_CA" ]; then
+        install -m 0644 "$LLI_CA" /usr/local/share/ca-certificates/mitmproxy.crt
+        update-ca-certificates >/dev/null 2>&1 || true
+
+        # The system store covers curl/git/openssl. These cover the runtimes that
+        # ship their own bundle and ignore it.
+        export NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/mitmproxy.crt
+        export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+        export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+    else
+        echo "llm-interceptor: no CA at $LLI_CA — HTTPS interception will fail."
+        echo "  Run 'lli watch' once on the host to generate ~/.mitmproxy, then relaunch."
+    fi
+
+    # Both variables point at the SAME proxy endpoint. HTTP_PROXY selects it for
+    # http:// targets, HTTPS_PROXY for https:// targets (tunnelled via CONNECT to
+    # that same port) — they are not two ports and not two protocols.
+    export HTTP_PROXY="http://127.0.0.1:${LLI_PORT}"
+    export HTTPS_PROXY="http://127.0.0.1:${LLI_PORT}"
+    export http_proxy="$HTTP_PROXY"
+    export https_proxy="$HTTPS_PROXY"
+
+    # Keep container-local services off the proxy — notably pumlsrv on
+    # ${PUMLSRV_PORT:-8380}. This matters because bun's fetch() *does* proxy
+    # 127.0.0.1 unless it is listed here (curl skips loopback on its own).
+    # NO_PROXY matches on host, not port, so a llama-server on loopback is exempt
+    # too; point OpenCode at the host's LAN address if you want it captured.
+    export NO_PROXY="${LLM_INTERCEPTOR_NO_PROXY:-localhost,127.0.0.1,::1}"
+    export no_proxy="$NO_PROXY"
+
+    echo "llm-interceptor: routing through $HTTP_PROXY (NO_PROXY=$NO_PROXY)"
+fi
+
 pumlsrv-server &
 
 # Use setpriv to drop privileges and exec the command as the mapped user

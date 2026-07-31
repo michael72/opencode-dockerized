@@ -152,9 +152,16 @@ INI-style (`key.name=value`), parsed with `while IFS='=' read -r key value` loop
 ```ini
 setting.ssh_agent_support=true
 setting.openspec_support=true
+setting.llm_interceptor_support=false
+setting.llm_interceptor_port=9090
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 ```
+
+Boolean settings default to `false` and are only enabled by an exact `=true`. Each new
+setting needs wiring in five places in `config-lib.sh`: the globals block, `load_config`,
+`save_config`, `init_config_file`, and a `prompt_*` function registered in
+`interactive_config_setup`.
 
 ### Dockerfile Conventions
 

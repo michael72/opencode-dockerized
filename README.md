@@ -269,6 +269,8 @@ Configuration is stored in `~/.config/opencode-dockerized/config` (INI format):
 # Format: setting.<name>=<value>
 setting.ssh_agent_support=true
 setting.openspec_support=true
+setting.llm_interceptor_support=false
+setting.llm_interceptor_port=9090
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -448,6 +450,50 @@ openspec init
 - Works within the mounted project directory
 
 For more information, see the [OpenSpec documentation](https://github.com/Fission-AI/OpenSpec/).
+
+### LLM Traffic Interception (llm-interceptor)
+
+Capture the prompts and responses OpenCode exchanges with LLM providers using
+[llm-interceptor](https://pypi.org/project/llm-interceptor/) (`lli`), a mitmproxy-based recorder.
+
+**`lli` runs on the host, not in the container.** `lli watch` is an interactive TUI — you press
+Enter to start and stop a capture — so it cannot share the container's terminal with OpenCode, and
+it has no daemon mode. Running it on the host also means captured traces survive `docker run --rm`,
+and host and container share one mitmproxy CA. Since containers already run with `--network host`,
+the container reaches it on plain loopback.
+
+**Setup:**
+
+1. Install and start `lli` on the host, in its own terminal:
+   ```bash
+   uv tool install llm-interceptor
+   lli watch                       # generates ~/.mitmproxy on first run
+   ```
+
+2. Enable it during setup, or set it manually in `~/.config/opencode-dockerized/config`:
+   ```ini
+   setting.llm_interceptor_support=true
+   setting.llm_interceptor_port=9090
+   ```
+
+3. Launch OpenCode as usual. On startup the container mounts `~/.mitmproxy` read-only, installs the
+   CA into its trust store, and exports `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` plus
+   `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE`.
+
+**Notes:**
+
+- `HTTP_PROXY` and `HTTPS_PROXY` are not two ports or two protocols — both point at the *same*
+  proxy endpoint. `HTTP_PROXY` is used for `http://` targets, `HTTPS_PROXY` for `https://` targets
+  (tunnelled to that same port via `CONNECT`).
+- If you *only* talk to a local model over plain HTTP (e.g. `llama-server`), `HTTP_PROXY` alone is
+  enough and the CA is irrelevant — there is no TLS to intercept. The CA only matters for
+  `https://` providers.
+- Loopback is excluded from the proxy by default so the container's own `pumlsrv` is not routed
+  through it. This exclusion is host-based, not port-based, so a `llama-server` on `127.0.0.1` is
+  exempt too — point OpenCode at the host's LAN address to capture it, or override with
+  `LLM_INTERCEPTOR_NO_PROXY`.
+- The mitmproxy CA is deliberately **not** baked into the image. Doing so would ship the matching
+  private key inside the image, and it would not be the CA the running proxy actually presents.
 
 ### Python Development with uv
 
