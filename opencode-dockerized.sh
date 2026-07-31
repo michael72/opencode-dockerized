@@ -65,7 +65,7 @@ build_image() {
     print_info "Building OpenCode Docker image..."
     # Regular build uses Docker layer cache normally.
     # Only the 'update' command passes OPENCODE_BUILD_TIME to bust the npm cache.
-    docker build -t "$IMAGE_NAME" "$SCRIPT_DIR"
+    docker build --progress=plain -t "$IMAGE_NAME" "$SCRIPT_DIR"
     print_success "Docker image built successfully"
 }
 
@@ -204,7 +204,7 @@ run_opencode() {
 update_opencode() {
     check_image "$IMAGE_NAME" || {
         print_info "Image not found, building fresh..."
-        docker build --build-arg "OPENCODE_BUILD_TIME=$(date +%s)" -t "$IMAGE_NAME" "$SCRIPT_DIR"
+        docker build --progress=plain --build-arg "OPENCODE_BUILD_TIME=$(date +%s)" -t "$IMAGE_NAME" "$SCRIPT_DIR"
         print_success "OpenCode image built successfully"
         return 0
     }
@@ -216,7 +216,7 @@ update_opencode() {
 
     # Rebuild with cache-busting to force fresh npm install
     print_info "Rebuilding image with latest OpenCode and OpenSpec..."
-    docker build --build-arg "OPENCODE_BUILD_TIME=$(date +%s)" -t "$IMAGE_NAME" "$SCRIPT_DIR"
+    docker build --progress=plain --build-arg "OPENCODE_BUILD_TIME=$(date +%s)" -t "$IMAGE_NAME" "$SCRIPT_DIR"
 
     # Show new version after update
     print_info "Updated OpenCode version:"

@@ -146,6 +146,24 @@ WORKDIR /
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Install lli into an isolated venv; mitmproxy/mitmdump come in as deps
+ENV PATH="/opt/lli/bin:${PATH}"
+RUN uv venv /opt/lli \
+    && uv pip install --no-cache-dir llm-interceptor
+
+# Generate the mitmproxy CA headlessly (mitmdump writes ~/.mitmproxy on startup),
+# then trust it in the OS store
+RUN timeout 3 mitmdump >/dev/null 2>&1 || true; \
+    test -f /root/.mitmproxy/mitmproxy-ca-cert.pem \
+    && cp /root/.mitmproxy/mitmproxy-ca-cert.pem \
+          /usr/local/share/ca-certificates/mitmproxy.crt \
+    && update-ca-certificates
+
+# TODO this is not working yet!
+#ENV HTTP_PROXY=127.0.0.1:9090 \
+#    HTTPS_PROXY=127.0.0.1:9090 \
+#    NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/mitmproxy.crt
+
 # Set the entrypoint (runs as root, then switches to coder)
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
