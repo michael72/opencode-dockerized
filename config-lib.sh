@@ -74,6 +74,7 @@ SSH_AGENT_SUPPORT=false          # Boolean flag for SSH agent forwarding support
 OPENSPEC_SUPPORT=false           # Boolean flag for OpenSpec (spec-driven development) support
 LLM_INTERCEPTOR_SUPPORT=false    # Boolean flag for routing LLM traffic through a host-side 'lli watch'
 LLM_INTERCEPTOR_PORT=9090        # Port the host-side 'lli watch' proxy listens on
+LLM_INTERCEPTOR_CAPTURE_LOCAL=false  # Also proxy loopback, so a local model (llama-server) is captured
 
 # ============================================
 # SHARED HELPERS
@@ -218,6 +219,7 @@ build_common_docker_args() {
         -e "OPENSPEC_SUPPORT=$OPENSPEC_SUPPORT"
         -e "LLM_INTERCEPTOR_SUPPORT=$LLM_INTERCEPTOR_SUPPORT"
         -e "LLM_INTERCEPTOR_PORT=$LLM_INTERCEPTOR_PORT"
+        -e "LLM_INTERCEPTOR_CAPTURE_LOCAL=$LLM_INTERCEPTOR_CAPTURE_LOCAL"
     )
 
     # Pass terminal identification variables so applications inside the container
@@ -366,6 +368,10 @@ init_config_file() {
 # See: https://pypi.org/project/llm-interceptor/
 # setting.llm_interceptor_support=false
 # setting.llm_interceptor_port=9090
+# Set capture_local=true for a local model (llama-server, ollama): it stops exempting
+# loopback from the proxy. lli also needs a matching glob to record it, e.g.
+#   lli watch --include '*127.0.0.1*'
+# setting.llm_interceptor_capture_local=false
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -419,6 +425,7 @@ load_config() {
     OPENSPEC_SUPPORT=false
     LLM_INTERCEPTOR_SUPPORT=false
     LLM_INTERCEPTOR_PORT=9090
+    LLM_INTERCEPTOR_CAPTURE_LOCAL=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ "$key" =~ ^[[:space:]]*setting\. ]] || continue
@@ -429,6 +436,7 @@ load_config() {
         [[ "$key" =~ openspec_support ]] && [[ "$value" == "true" ]] && OPENSPEC_SUPPORT=true
         [[ "$key" =~ llm_interceptor_support ]] && [[ "$value" == "true" ]] && LLM_INTERCEPTOR_SUPPORT=true
         [[ "$key" =~ llm_interceptor_port ]] && [[ "$value" =~ ^[0-9]+$ ]] && LLM_INTERCEPTOR_PORT="$value"
+        [[ "$key" =~ llm_interceptor_capture_local ]] && [[ "$value" == "true" ]] && LLM_INTERCEPTOR_CAPTURE_LOCAL=true
     done < "$CONFIG_FILE"
 
     return 0
@@ -458,6 +466,10 @@ save_config() {
         echo "# See: https://pypi.org/project/llm-interceptor/"
         echo "setting.llm_interceptor_support=$LLM_INTERCEPTOR_SUPPORT"
         echo "setting.llm_interceptor_port=$LLM_INTERCEPTOR_PORT"
+        echo "# Set capture_local=true for a local model (llama-server, ollama): it stops"
+        echo "# exempting loopback from the proxy. lli also needs a matching glob, e.g."
+        echo "#   lli watch --include '*127.0.0.1*'"
+        echo "setting.llm_interceptor_capture_local=$LLM_INTERCEPTOR_CAPTURE_LOCAL"
         echo ""
         echo "# Custom volume mounts (read-only by default)"
         echo "# Format: mount.<name>=<host_path>:<container_path>[:rw]"
@@ -907,6 +919,23 @@ prompt_llm_interceptor_support() {
         fi
     fi
 
+    echo ""
+    echo "Are you pointing OpenCode at a local model (llama-server, ollama) on loopback?"
+    echo "If so, loopback must NOT be exempted from the proxy — otherwise those calls"
+    echo "never reach lli. Note this routes the container's pumlsrv through the proxy"
+    echo "too, so pumlsrv needs 'lli watch' running."
+    echo ""
+    read -r -p "Capture traffic to local models on loopback? (y/N): " lli_local
+    if [[ "$lli_local" =~ ^[Yy]$ ]]; then
+        LLM_INTERCEPTOR_CAPTURE_LOCAL=true
+        config_success "Loopback traffic will be proxied"
+        config_info "lli records by URL filter — start it with a matching glob:"
+        config_info "  lli watch --include '*127.0.0.1*' --include '*localhost*'"
+    else
+        LLM_INTERCEPTOR_CAPTURE_LOCAL=false
+        config_info "Loopback exempted from the proxy"
+    fi
+
     if [ ! -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]; then
         config_warning "No mitmproxy CA found at $HOME/.mitmproxy/mitmproxy-ca-cert.pem"
         config_info "Run 'lli watch' once on the host to generate it"
@@ -920,7 +949,7 @@ print_config() {
     echo "  Config file: $CONFIG_FILE"
     echo "  SSH agent forwarding: $SSH_AGENT_SUPPORT"
     echo "  OpenSpec support: $OPENSPEC_SUPPORT"
-    echo "  LLM interception: $LLM_INTERCEPTOR_SUPPORT (port $LLM_INTERCEPTOR_PORT)"
+    echo "  LLM interception: $LLM_INTERCEPTOR_SUPPORT (port $LLM_INTERCEPTOR_PORT, capture_local $LLM_INTERCEPTOR_CAPTURE_LOCAL)"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
         echo ""

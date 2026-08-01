@@ -488,12 +488,45 @@ the container reaches it on plain loopback.
 - If you *only* talk to a local model over plain HTTP (e.g. `llama-server`), `HTTP_PROXY` alone is
   enough and the CA is irrelevant — there is no TLS to intercept. The CA only matters for
   `https://` providers.
-- Loopback is excluded from the proxy by default so the container's own `pumlsrv` is not routed
-  through it. This exclusion is host-based, not port-based, so a `llama-server` on `127.0.0.1` is
-  exempt too — point OpenCode at the host's LAN address to capture it, or override with
-  `LLM_INTERCEPTOR_NO_PROXY`.
 - The mitmproxy CA is deliberately **not** baked into the image. Doing so would ship the matching
   private key inside the image, and it would not be the CA the running proxy actually presents.
+
+#### Capturing a local model (llama-server, ollama)
+
+A local model needs **two** separate things, and missing either one produces the same symptom —
+nothing in `traces/`:
+
+**1. The traffic has to reach the proxy.** Loopback is exempted from the proxy by default, so the
+container's `pumlsrv` keeps working when `lli` is not running. That exemption is host-based, not
+port-based, so it covers your local model too. Turn it off:
+
+```ini
+setting.llm_interceptor_capture_local=true
+```
+
+The trade-off is that `pumlsrv` is then routed through the proxy as well, so it needs `lli watch`
+running. Alternatively leave this off and point OpenCode at the host's LAN address instead of
+`127.0.0.1`. Fine-tune with `LLM_INTERCEPTOR_NO_PROXY` if you need something in between.
+
+**2. `lli` has to decide to record it.** `lli` is not a general traffic recorder — it only writes a
+session when the URL matches its filter, which by default is a regex allowlist of hosted providers:
+
+```
+api.anthropic.com   api.openai.com   generativelanguage.googleapis.com
+api.together.xyz    api.groq.com     api.mistral.ai
+api.cohere.ai       api.deepseek.com
+```
+
+Anything else is proxied and shown in `lli`'s request summary, but never written to `traces/` —
+which looks exactly like interception being broken. Local endpoints need an explicit glob, and
+`--include` is repeatable:
+
+```bash
+lli watch --include "*127.0.0.1*" --include "*localhost*"
+```
+
+This is also why `openrouter.ai`, GitHub Copilot, Azure OpenAI and Bedrock produce nothing by
+default — they are not in the built-in list either.
 
 ### Python Development with uv
 

@@ -125,15 +125,34 @@ if [ "${LLM_INTERCEPTOR_SUPPORT:-false}" = "true" ]; then
     export http_proxy="$HTTP_PROXY"
     export https_proxy="$HTTPS_PROXY"
 
-    # Keep container-local services off the proxy — notably pumlsrv on
+    # By default keep container-local services off the proxy — notably pumlsrv on
     # ${PUMLSRV_PORT:-8380}. This matters because bun's fetch() *does* proxy
     # 127.0.0.1 unless it is listed here (curl skips loopback on its own).
-    # NO_PROXY matches on host, not port, so a llama-server on loopback is exempt
-    # too; point OpenCode at the host's LAN address if you want it captured.
-    export NO_PROXY="${LLM_INTERCEPTOR_NO_PROXY:-localhost,127.0.0.1,::1}"
+    #
+    # A local model (llama-server, ollama) also lives on loopback, so capturing it
+    # means giving up that exemption entirely: NO_PROXY matches on host, not port,
+    # so there is no way to route :8080 through the proxy while sparing :8380.
+    # Routing pumlsrv through the proxy is harmless, but it does mean pumlsrv stops
+    # working when 'lli watch' is not running.
+    if [ "${LLM_INTERCEPTOR_CAPTURE_LOCAL:-false}" = "true" ]; then
+        export NO_PROXY="${LLM_INTERCEPTOR_NO_PROXY:-}"
+    else
+        export NO_PROXY="${LLM_INTERCEPTOR_NO_PROXY:-localhost,127.0.0.1,::1}"
+    fi
     export no_proxy="$NO_PROXY"
 
-    echo "llm-interceptor: routing through $HTTP_PROXY (NO_PROXY=$NO_PROXY)"
+    echo "llm-interceptor: routing through $HTTP_PROXY (NO_PROXY=${NO_PROXY:-<none>})"
+
+    # lli only *records* URLs matching its filter; by default that is a regex
+    # allowlist of hosted providers (api.anthropic.com, api.openai.com, ...).
+    # Everything else — including any local model — is proxied and shown in lli's
+    # request summary but never written to traces/. Local endpoints therefore need
+    # an explicit glob, which '--include' accepts repeatably.
+    if [ "${LLM_INTERCEPTOR_CAPTURE_LOCAL:-false}" = "true" ]; then
+        echo "llm-interceptor: loopback is proxied — start lli with a matching glob, e.g."
+        echo "  lli watch --include '*127.0.0.1*' --include '*localhost*'"
+        echo "  (its built-in allowlist covers hosted providers only, not local models)"
+    fi
 fi
 
 pumlsrv-server &
