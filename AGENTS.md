@@ -154,6 +154,7 @@ setting.ssh_agent_support=true
 setting.openspec_support=true
 setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
+setting.llm_interceptor_capture_local=false
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 ```

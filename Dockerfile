@@ -146,23 +146,6 @@ WORKDIR /
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# LLM traffic interception (llm-interceptor / mitmproxy) is opt-in and deliberately
-# NOT installed here — 'lli watch' runs on the HOST. Reasons:
-#   * containers run with --network host, so 127.0.0.1:9090 already reaches a
-#     host-side 'lli watch' with no extra plumbing
-#   * 'lli watch' is an interactive TUI (Enter starts/stops a capture); it cannot
-#     share the container's terminal with opencode, and it has no daemon mode
-#   * captured traces live on the host, so they survive 'docker run --rm'
-#   * one stable mitmproxy CA on the host, instead of a fresh throwaway CA per
-#     container that nothing else trusts
-#
-# The host's ~/.mitmproxy is bind-mounted read-only and trusted at runtime by
-# entrypoint.sh. See 'setting.llm_interceptor_support' in the user config.
-#
-# Do NOT bake a CA into this image: the matching private key would ship inside it
-# (anyone with the image could MITM the container), and it still would not be the
-# CA that the proxy actually presents at runtime.
-
 # Set the entrypoint (runs as root, then switches to coder)
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 

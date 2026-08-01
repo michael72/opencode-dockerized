@@ -474,6 +474,8 @@ the container reaches it on plain loopback.
    ```ini
    setting.llm_interceptor_support=true
    setting.llm_interceptor_port=9090
+   # when using a local LLM additional set:
+   setting.llm_interceptor_capture_local=true
    ```
 
 3. Launch OpenCode as usual. On startup the container mounts `~/.mitmproxy` read-only, installs the
