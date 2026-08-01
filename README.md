@@ -269,6 +269,8 @@ Configuration is stored in `~/.config/opencode-dockerized/config` (INI format):
 # Format: setting.<name>=<value>
 setting.ssh_agent_support=true
 setting.openspec_support=true
+setting.llm_interceptor_support=false
+setting.llm_interceptor_port=9090
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -448,6 +450,85 @@ openspec init
 - Works within the mounted project directory
 
 For more information, see the [OpenSpec documentation](https://github.com/Fission-AI/OpenSpec/).
+
+### LLM Traffic Interception (llm-interceptor)
+
+Capture the prompts and responses OpenCode exchanges with LLM providers using
+[llm-interceptor](https://pypi.org/project/llm-interceptor/) (`lli`), a mitmproxy-based recorder.
+
+**`lli` runs on the host, not in the container.** `lli watch` is an interactive TUI — you press
+Enter to start and stop a capture — so it cannot share the container's terminal with OpenCode, and
+it has no daemon mode. Running it on the host also means captured traces survive `docker run --rm`,
+and host and container share one mitmproxy CA. Since containers already run with `--network host`,
+the container reaches it on plain loopback.
+
+**Setup:**
+
+1. Install and start `lli` on the host, in its own terminal:
+   ```bash
+   uv tool install llm-interceptor
+   lli watch                       # generates ~/.mitmproxy on first run
+   ```
+
+2. Enable it during setup, or set it manually in `~/.config/opencode-dockerized/config`:
+   ```ini
+   setting.llm_interceptor_support=true
+   setting.llm_interceptor_port=9090
+   # when using a local LLM additional set:
+   setting.llm_interceptor_capture_local=true
+   ```
+
+3. Launch OpenCode as usual. On startup the container mounts `~/.mitmproxy` read-only, installs the
+   CA into its trust store, and exports `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` plus
+   `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE`.
+
+**Notes:**
+
+- `HTTP_PROXY` and `HTTPS_PROXY` are not two ports or two protocols — both point at the *same*
+  proxy endpoint. `HTTP_PROXY` is used for `http://` targets, `HTTPS_PROXY` for `https://` targets
+  (tunnelled to that same port via `CONNECT`).
+- If you *only* talk to a local model over plain HTTP (e.g. `llama-server`), `HTTP_PROXY` alone is
+  enough and the CA is irrelevant — there is no TLS to intercept. The CA only matters for
+  `https://` providers.
+- The mitmproxy CA is deliberately **not** baked into the image. Doing so would ship the matching
+  private key inside the image, and it would not be the CA the running proxy actually presents.
+
+#### Capturing a local model (llama-server, ollama)
+
+A local model needs **two** separate things, and missing either one produces the same symptom —
+nothing in `traces/`:
+
+**1. The traffic has to reach the proxy.** Loopback is exempted from the proxy by default, so the
+container's `pumlsrv` keeps working when `lli` is not running. That exemption is host-based, not
+port-based, so it covers your local model too. Turn it off:
+
+```ini
+setting.llm_interceptor_capture_local=true
+```
+
+The trade-off is that `pumlsrv` is then routed through the proxy as well, so it needs `lli watch`
+running. Alternatively leave this off and point OpenCode at the host's LAN address instead of
+`127.0.0.1`. Fine-tune with `LLM_INTERCEPTOR_NO_PROXY` if you need something in between.
+
+**2. `lli` has to decide to record it.** `lli` is not a general traffic recorder — it only writes a
+session when the URL matches its filter, which by default is a regex allowlist of hosted providers:
+
+```
+api.anthropic.com   api.openai.com   generativelanguage.googleapis.com
+api.together.xyz    api.groq.com     api.mistral.ai
+api.cohere.ai       api.deepseek.com
+```
+
+Anything else is proxied and shown in `lli`'s request summary, but never written to `traces/` —
+which looks exactly like interception being broken. Local endpoints need an explicit glob, and
+`--include` is repeatable:
+
+```bash
+lli watch --include "*127.0.0.1*" --include "*localhost*"
+```
+
+This is also why `openrouter.ai`, GitHub Copilot, Azure OpenAI and Bedrock produce nothing by
+default — they are not in the built-in list either.
 
 ### Python Development with uv
 
