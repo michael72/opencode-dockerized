@@ -82,6 +82,29 @@ else
     echo -e "${GREEN}✓${NC} OpenSpec config already exists at ~/.config/openspec/config.json"
 fi
 
+# Copy slim system prompt templates (not enabled automatically — see
+# config/opencode/prompts/README.md for how to wire them into opencode.json)
+ensure_dir "$HOME/.config/opencode/prompts"
+if [ -d "$SCRIPT_DIR/config/opencode/prompts" ]; then
+    prompts_copied=false
+    for prompt_file in "$SCRIPT_DIR"/config/opencode/prompts/*.md; do
+        [ -f "$prompt_file" ] || continue
+        prompt_target="$HOME/.config/opencode/prompts/$(basename "$prompt_file")"
+        if [ ! -f "$prompt_target" ]; then
+            cp "$prompt_file" "$prompt_target"
+            prompts_copied=true
+        fi
+    done
+    if [ "$prompts_copied" = true ]; then
+        echo -e "${GREEN}✓${NC} Copied slim system prompts to ~/.config/opencode/prompts/"
+        echo -e "${YELLOW}  Not active yet — see ~/.config/opencode/prompts/README.md to enable${NC}"
+    else
+        echo -e "${GREEN}✓${NC} Slim system prompts already present in ~/.config/opencode/prompts/"
+    fi
+else
+    print_warning "Prompt templates not found at $SCRIPT_DIR/config/opencode/prompts"
+fi
+
 interactive_config_setup
 
 # Shell completions setup

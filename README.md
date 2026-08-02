@@ -451,6 +451,54 @@ openspec init
 
 For more information, see the [OpenSpec documentation](https://github.com/Fission-AI/OpenSpec/).
 
+### Customizing System Prompts
+
+OpenCode ships a large built-in system prompt — roughly 2–3k tokens once the
+environment block, `AGENTS.md`, MCP instructions and the skills list are added.
+The prompt is chosen by substring match on the model ID, so anything that isn't
+`gpt*`, `gemini-*`, `claude*`, `trinity*` or `kimi*` — i.e. every local model —
+gets the generic 8.5 KB `default.txt`. On a 30B model running on your own GPU,
+that preamble is a real slice of the context window.
+
+The prompts are compiled into the OpenCode binary, so there is no file in the
+container to edit. They are replaced through config instead.
+
+This repo ships slimmed-down replacements in `config/opencode/prompts/`, which
+`setup.sh` copies to `~/.config/opencode/prompts/`:
+
+| File | Replaces | Size | Built-in |
+|------|----------|------|----------|
+| `build-slim.md` | build/plan agent prompt | ~2.4 KB | ~8.5 KB |
+| `title-slim.md` | session title agent prompt | ~0.7 KB | ~2.1 KB |
+
+They are **not active by default**. To enable them, add to
+`~/.config/opencode/opencode.json`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "build": { "prompt": "{file:./prompts/build-slim.md}" },
+    "plan":  { "prompt": "{file:./prompts/build-slim.md}" },
+    "title": { "prompt": "{file:./prompts/title-slim.md}" }
+  }
+}
+```
+
+Since `~/.config/opencode/` is mounted into the container, this takes effect on
+the next `run` — no rebuild needed. `{file:...}` paths resolve relative to
+`opencode.json` itself.
+
+Setting `prompt` **replaces** the built-in prompt rather than adding to it. To
+*add* instructions, use `AGENTS.md` or the `instructions` config field instead.
+
+The skills block can be dropped with `"permission": { "skill": "deny" }`, and
+the environment block can be stripped with an
+`experimental.chat.system.transform` plugin.
+
+See [`config/opencode/prompts/README.md`](config/opencode/prompts/README.md)
+for the full details, the plugin snippet, and the caveats.
+
 ### LLM Traffic Interception (llm-interceptor)
 
 Capture the prompts and responses OpenCode exchanges with LLM providers using
@@ -661,6 +709,11 @@ opencode-dockerized update
 
 - **`examples/.env.example`** - Template for environment variables
 - **`examples/config.example`** - Example custom configuration file
+
+### Templates (`config/`)
+
+- **`config/openspec/config.json`** - OpenSpec config template (copied to `~/.config/openspec/`)
+- **`config/opencode/prompts/`** - Slim system prompt replacements (copied to `~/.config/opencode/prompts/`, opt-in)
 
 ### Configuration
 - **`.gitignore`** - Excludes sensitive files from Git
