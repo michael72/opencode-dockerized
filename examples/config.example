@@ -63,6 +63,8 @@
 # Common examples:
 #   env.context7=CONTEXT7_API_KEY             # Context7 API key
 #   env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK  # AWS Bedrock credentials
+#   env.slim_tools=OPENCODE_SLIM_TOOLS        # Condensed tool descriptions
+#                                             # (see config/opencode/plugin/README.md)
 #
 # env.context7=CONTEXT7_API_KEY
 # env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK

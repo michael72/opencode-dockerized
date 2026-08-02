@@ -81,6 +81,10 @@ export const TrimSystem = async () => ({
 The same hook can strip arbitrary sections out of the stock prompt if you would
 rather trim than replace.
 
+**Tool descriptions** — another ~16 KB sent with every request, and bigger than
+the system prompt itself. See [`../plugin/README.md`](../plugin/README.md) for
+`slim-tools.js`, which rewrites them through the `tool.definition` hook.
+
 ## Caveats
 
 - Replacement is total. If you cut a rule, the model no longer has it — smaller

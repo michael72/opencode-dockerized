@@ -499,6 +499,35 @@ the environment block can be stripped with an
 See [`config/opencode/prompts/README.md`](config/opencode/prompts/README.md)
 for the full details, the plugin snippet, and the caveats.
 
+### Condensing Tool Descriptions
+
+The system prompt is only half the fixed cost. OpenCode's built-in **tool
+descriptions** are another ~16 KB (~4k tokens) of JSON, re-sent in full with
+every message — `bash` alone is 4.6 KB, nearly twice the slim build prompt.
+
+`config/opencode/plugin/slim-tools.js`, copied to
+`~/.config/opencode/plugin/` by `setup.sh`, rewrites them through OpenCode's
+`tool.definition` hook: **16.1 KB → 6.0 KB**, about 2.5k tokens back per
+request. The rules that steer behaviour stay (read before edit, `workdir`
+instead of `cd`, use the dedicated tools, don't commit unless asked); the
+restatement, the example pairs and the "Usage notes:" scaffolding go.
+`apply_patch` and `lsp` are left alone, since paraphrasing a format
+specification is how you get patches that don't apply.
+
+It is **inert until switched on**. Add the variable to your config
+(`env.custom1=OPENCODE_SLIM_TOOLS` — via `./setup.sh` or
+`~/.config/opencode-dockerized/config`) and export it on the host:
+
+```bash
+export OPENCODE_SLIM_TOOLS=1
+opencode-dockerized
+```
+
+`OPENCODE_SLIM_TOOLS_SKIP=bash,todowrite` keeps the built-in text for
+individual tools. See
+[`config/opencode/plugin/README.md`](config/opencode/plugin/README.md) for the
+per-tool sizes, how to verify what is actually sent, and the caveats.
+
 ### LLM Traffic Interception (llm-interceptor)
 
 Capture the prompts and responses OpenCode exchanges with LLM providers using
@@ -714,6 +743,7 @@ opencode-dockerized update
 
 - **`config/openspec/config.json`** - OpenSpec config template (copied to `~/.config/openspec/`)
 - **`config/opencode/prompts/`** - Slim system prompt replacements (copied to `~/.config/opencode/prompts/`, opt-in)
+- **`config/opencode/plugin/`** - Plugins, e.g. `slim-tools.js` for condensed tool descriptions (copied to `~/.config/opencode/plugin/`, opt-in)
 
 ### Configuration
 - **`.gitignore`** - Excludes sensitive files from Git
