@@ -507,7 +507,7 @@ every message — `bash` alone is 4.6 KB, nearly twice the slim build prompt.
 
 `config/opencode/plugin/slim-tools.js`, copied to
 `~/.config/opencode/plugin/` by `setup.sh`, rewrites them through OpenCode's
-`tool.definition` hook: **16.1 KB → 6.0 KB**, about 2.5k tokens back per
+`tool.definition` hook: **16.1 KB → 6.2 KB**, about 2.5k tokens back per
 request. The rules that steer behaviour stay (read before edit, `workdir`
 instead of `cd`, use the dedicated tools, don't commit unless asked); the
 restatement, the example pairs and the "Usage notes:" scaffolding go.

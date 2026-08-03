@@ -26,17 +26,17 @@ place a tool's description can be rewritten before it reaches the model.
 | `edit` | 0.5 KB | 1.4 KB |
 | `read` | 0.5 KB | 1.2 KB |
 | `websearch` | 0.45 KB | 1.0 KB |
+| `write` | 0.43 KB | 0.6 KB |
 | `question` | 0.4 KB | 0.7 KB |
 | `grep` | 0.35 KB | 0.7 KB |
 | `glob` | 0.3 KB | 0.5 KB |
-| `write` | 0.26 KB | 0.6 KB |
 | `webfetch` | 0.26 KB | 0.75 KB |
 | `skill` | 0.2 KB | 0.4 KB |
-| **total** | **6.0 KB** | **16.1 KB** |
+| **total** | **6.2 KB** | **16.1 KB** |
 
 Roughly 2.5k tokens back per request with the full tool set; ~1.5k with the
 default seven (`bash`, `edit`, `glob`, `grep`, `read`, `skill`, `write`), where
-it is 9.4 KB → 3.5 KB.
+it is 9.4 KB → 3.6 KB.
 
 `apply_patch` and `lsp` are deliberately left alone — their descriptions are
 format specifications, and paraphrasing a patch format is how you get patches
@@ -54,6 +54,20 @@ worked todo examples, and the sentences that say the same thing a second time.
 Host-specific values are read back out of the original description at runtime
 rather than hardcoded, so OS, shell, the temp directory, the default timeout,
 and the current year stay correct.
+
+`write` gains one line the built-in text does not have: a warning that `content`
+travels in a single tool call, so a very long file can exceed the model's output
+limit and arrive truncated — which surfaces as
+`Invalid input for tool write: JSON parsing failed ... Unterminated string`. The
+fix is to raise `limit.output` for the model in `opencode.json` *and* the
+inference server's own cap (`num_predict`, `--n-predict`, "max tokens"); the
+description just nudges the model to write long files in sections meanwhile.
+
+Writing files through `bash` (`cat > file`) is not the workaround, which is why
+that rule survives condensing: `write` and `edit` run under the `edit`
+permission, trigger the formatter, and return LSP diagnostics in the tool
+result, while a heredoc does none of that — and its body travels in the same
+single tool call, so it truncates at exactly the same point.
 
 ### Enabling
 
