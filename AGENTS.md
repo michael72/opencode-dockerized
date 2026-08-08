@@ -12,6 +12,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 - `setup.sh` — First-time config directory initialization
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
 - `config.example` — Example user config (INI-style), in `examples/`
+- `config/` — Templates copied into `~/.config/` by `setup.sh`: `openspec/config.json`, and `opencode/prompts/*.md` (slim system prompt replacements for local models — copied but never auto-enabled; the user wires them into `opencode.json` themselves)
 - `.dockerignore` — Excludes non-essential files from Docker build context
 - Completion scripts: `completions/{bash,zsh}.sh`
 

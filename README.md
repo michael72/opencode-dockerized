@@ -451,6 +451,83 @@ openspec init
 
 For more information, see the [OpenSpec documentation](https://github.com/Fission-AI/OpenSpec/).
 
+### Customizing System Prompts
+
+OpenCode ships a large built-in system prompt — roughly 2–3k tokens once the
+environment block, `AGENTS.md`, MCP instructions and the skills list are added.
+The prompt is chosen by substring match on the model ID, so anything that isn't
+`gpt*`, `gemini-*`, `claude*`, `trinity*` or `kimi*` — i.e. every local model —
+gets the generic 8.5 KB `default.txt`. On a 30B model running on your own GPU,
+that preamble is a real slice of the context window.
+
+The prompts are compiled into the OpenCode binary, so there is no file in the
+container to edit. They are replaced through config instead.
+
+This repo ships slimmed-down replacements in `config/opencode/prompts/`, which
+`setup.sh` copies to `~/.config/opencode/prompts/`:
+
+| File | Replaces | Size | Built-in |
+|------|----------|------|----------|
+| `build-slim.md` | build/plan agent prompt | ~2.4 KB | ~8.5 KB |
+| `title-slim.md` | session title agent prompt | ~0.7 KB | ~2.1 KB |
+
+They are **not active by default**. To enable them, add to
+`~/.config/opencode/opencode.json`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "build": { "prompt": "{file:./prompts/build-slim.md}" },
+    "plan":  { "prompt": "{file:./prompts/build-slim.md}" },
+    "title": { "prompt": "{file:./prompts/title-slim.md}" }
+  }
+}
+```
+
+Since `~/.config/opencode/` is mounted into the container, this takes effect on
+the next `run` — no rebuild needed. `{file:...}` paths resolve relative to
+`opencode.json` itself.
+
+Setting `prompt` **replaces** the built-in prompt rather than adding to it. To
+*add* instructions, use `AGENTS.md` or the `instructions` config field instead.
+
+The skills block can be dropped with `"permission": { "skill": "deny" }`, and
+the environment block can be stripped with an
+`experimental.chat.system.transform` plugin.
+
+See [`config/opencode/prompts/README.md`](config/opencode/prompts/README.md)
+for the full details, the plugin snippet, and the caveats.
+
+### Condensing Tool Descriptions
+
+The system prompt is only half the fixed cost. OpenCode's built-in **tool
+descriptions** are another ~16 KB (~4k tokens) of JSON, re-sent in full with
+every message — `bash` alone is 4.6 KB, nearly twice the slim build prompt.
+
+`config/opencode/plugin/slim-tools.js`, copied to
+`~/.config/opencode/plugin/` by `setup.sh`, rewrites them through OpenCode's
+`tool.definition` hook: **16.1 KB → 6.2 KB**, about 2.5k tokens back per
+request. The rules that steer behaviour stay (read before edit, `workdir`
+instead of `cd`, use the dedicated tools, don't commit unless asked); the
+restatement, the example pairs and the "Usage notes:" scaffolding go.
+`apply_patch` and `lsp` are left alone, since paraphrasing a format
+specification is how you get patches that don't apply.
+
+It is **inert until switched on**. Add the variable to your config
+(`env.custom1=OPENCODE_SLIM_TOOLS` — via `./setup.sh` or
+`~/.config/opencode-dockerized/config`) and export it on the host:
+
+```bash
+export OPENCODE_SLIM_TOOLS=1
+opencode-dockerized
+```
+
+`OPENCODE_SLIM_TOOLS_SKIP=bash,todowrite` keeps the built-in text for
+individual tools. See
+[`config/opencode/plugin/README.md`](config/opencode/plugin/README.md) for the
+per-tool sizes, how to verify what is actually sent, and the caveats.
+
 ### LLM Traffic Interception (llm-interceptor)
 
 Capture the prompts and responses OpenCode exchanges with LLM providers using
@@ -661,6 +738,12 @@ opencode-dockerized update
 
 - **`examples/.env.example`** - Template for environment variables
 - **`examples/config.example`** - Example custom configuration file
+
+### Templates (`config/`)
+
+- **`config/openspec/config.json`** - OpenSpec config template (copied to `~/.config/openspec/`)
+- **`config/opencode/prompts/`** - Slim system prompt replacements (copied to `~/.config/opencode/prompts/`, opt-in)
+- **`config/opencode/plugin/`** - Plugins, e.g. `slim-tools.js` for condensed tool descriptions (copied to `~/.config/opencode/plugin/`, opt-in)
 
 ### Configuration
 - **`.gitignore`** - Excludes sensitive files from Git

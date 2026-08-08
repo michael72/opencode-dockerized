@@ -82,6 +82,53 @@ else
     echo -e "${GREEN}✓${NC} OpenSpec config already exists at ~/.config/openspec/config.json"
 fi
 
+# Copy slim system prompt templates (not enabled automatically — see
+# config/opencode/prompts/README.md for how to wire them into opencode.json)
+ensure_dir "$HOME/.config/opencode/prompts"
+if [ -d "$SCRIPT_DIR/config/opencode/prompts" ]; then
+    prompts_copied=false
+    for prompt_file in "$SCRIPT_DIR"/config/opencode/prompts/*.md; do
+        [ -f "$prompt_file" ] || continue
+        prompt_target="$HOME/.config/opencode/prompts/$(basename "$prompt_file")"
+        if [ ! -f "$prompt_target" ]; then
+            cp "$prompt_file" "$prompt_target"
+            prompts_copied=true
+        fi
+    done
+    if [ "$prompts_copied" = true ]; then
+        echo -e "${GREEN}✓${NC} Copied slim system prompts to ~/.config/opencode/prompts/"
+        echo -e "${YELLOW}  Not active yet — see ~/.config/opencode/prompts/README.md to enable${NC}"
+    else
+        echo -e "${GREEN}✓${NC} Slim system prompts already present in ~/.config/opencode/prompts/"
+    fi
+else
+    print_warning "Prompt templates not found at $SCRIPT_DIR/config/opencode/prompts"
+fi
+
+# Copy plugins (inert until switched on — see config/opencode/plugin/README.md)
+if [ -d "$SCRIPT_DIR/config/opencode/plugin" ]; then
+    plugins_copied=false
+    for plugin_file in "$SCRIPT_DIR"/config/opencode/plugin/*.js; do
+        [ -f "$plugin_file" ] || continue
+        plugin_target="$HOME/.config/opencode/plugin/$(basename "$plugin_file")"
+        if [ ! -f "$plugin_target" ]; then
+            cp "$plugin_file" "$plugin_target"
+            plugins_copied=true
+        fi
+    done
+    if [ -f "$SCRIPT_DIR/config/opencode/plugin/README.md" ] && [ ! -f "$HOME/.config/opencode/plugin/README.md" ]; then
+        cp "$SCRIPT_DIR/config/opencode/plugin/README.md" "$HOME/.config/opencode/plugin/README.md"
+    fi
+    if [ "$plugins_copied" = true ]; then
+        echo -e "${GREEN}✓${NC} Copied plugins to ~/.config/opencode/plugin/"
+        echo -e "${YELLOW}  slim-tools is inert until OPENCODE_SLIM_TOOLS=1 — see ~/.config/opencode/plugin/README.md${NC}"
+    else
+        echo -e "${GREEN}✓${NC} Plugins already present in ~/.config/opencode/plugin/"
+    fi
+else
+    print_warning "Plugins not found at $SCRIPT_DIR/config/opencode/plugin"
+fi
+
 interactive_config_setup
 
 # Shell completions setup
