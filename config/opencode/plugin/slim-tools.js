@@ -69,7 +69,7 @@ Narrow the search with \`include\` ("*.js", "*.{ts,tsx}"). To count matches, run
   write: `Write a file, overwriting whatever is at that path.
 
 - For an existing file you MUST read it first; the write fails otherwise.
-- \`content\` goes out inside a single tool call, so a very long file can run into your output limit and arrive truncated. Write the first section, then extend it with edit.
+- A long file can run into your output limit and arrive truncated. Write the first section, then extend it with edit.
 - Prefer editing existing files. Never create documentation or README files unless the user asked for them. Only add emojis if asked.`,
 
   skill: `Load a skill listed in the system prompt, injecting its instructions and resources into the conversation. Its output may reference scripts and files next to the skill. \`name\` must match one of available_skills.`,

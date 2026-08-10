@@ -9,6 +9,7 @@ set -e
 # This allows the script to be invoked via a symlink in PATH (e.g. ~/.local/bin)
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 IMAGE_NAME="opencode-dockerized:latest"
+export OPENCODE_SLIM_TOOLS=1
 
 # Colors for output (defined before sourcing config-lib so it picks them up)
 RED='\033[0;31m'
