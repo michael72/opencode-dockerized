@@ -75,7 +75,7 @@ source "$SCRIPT_DIR/config-lib.sh"
 | Constants         | UPPER_SNAKE        | `IMAGE_NAME`, `SCRIPT_DIR`, `CONFIG_DIR`      |
 | Local variables   | lower_snake        | `project_dir`, `container_name`               |
 | Global arrays     | UPPER_SNAKE        | `CUSTOM_MOUNTS=()`, `DOCKER_MOUNT_ARGS=()`   |
-| Booleans          | UPPER_SNAKE=false  | `SSH_AGENT_SUPPORT=false`, `OPENSPEC_SUPPORT=false` |
+| Booleans          | UPPER_SNAKE=false  | `SSH_AGENT_SUPPORT=false`, `OPENSPEC_SUPPORT=false`, `GRAPHIFY_SUPPORT=true` |
 | Docker images     | kebab-case:tag     | `opencode-dockerized:latest`                  |
 | Container names   | kebab-case-suffix  | `opencode-myproject-abc123`                   |
 
@@ -156,14 +156,17 @@ setting.openspec_support=true
 setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.llm_interceptor_capture_local=false
+setting.graphify_support=true
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 ```
 
-Boolean settings default to `false` and are only enabled by an exact `=true`. Each new
-setting needs wiring in five places in `config-lib.sh`: the globals block, `load_config`,
-`save_config`, `init_config_file`, and a `prompt_*` function registered in
-`interactive_config_setup`.
+Boolean settings default to `false` and are only enabled by an exact `=true`. Opt-out
+settings invert that: they default to `true` and are only disabled by an exact `=false`
+(`setting.graphify_support`). Each new setting needs wiring in five places in
+`config-lib.sh`: the globals block, `load_config`, `save_config`, `init_config_file`, and
+a `prompt_*` function registered in `interactive_config_setup`. Settings the entrypoint
+acts on also need an `-e` entry in `build_common_docker_args`.
 
 ### Dockerfile Conventions
 

@@ -271,6 +271,7 @@ setting.ssh_agent_support=true
 setting.openspec_support=true
 setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
+setting.graphify_support=true
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -450,6 +451,32 @@ openspec init
 - Works within the mounted project directory
 
 For more information, see the [OpenSpec documentation](https://github.com/Fission-AI/OpenSpec/).
+
+### Graphify Support
+
+The image ships [graphify](https://pypi.org/project/graphifyy/), which builds a code
+knowledge graph the `graphify` OpenCode skill queries to navigate a codebase. Unlike the
+other integrations it is **enabled by default**.
+
+On every launch the entrypoint either
+
+- registers the skill project-scoped (`.opencode/skills/graphify/`, inside the writable
+  project mount) and builds the graph for the first time, or
+- refreshes an existing graph incrementally (`graphify . --update`).
+
+Both steps are non-fatal: a failure prints a hint and OpenCode starts anyway.
+
+**To disable it** (e.g. for a huge repository where the initial build is slow, or when you
+do not want `.opencode/skills/graphify/` written into the project), answer "n" when
+`./setup.sh` asks, or set it manually in `~/.config/opencode-dockerized/config`:
+
+```ini
+setting.graphify_support=false
+```
+
+With graphify disabled nothing is registered and no graph is built or updated. The setting
+reaches the container as the `GRAPHIFY_SUPPORT` environment variable, which the entrypoint
+checks before touching graphify at all.
 
 ### Customizing System Prompts
 
