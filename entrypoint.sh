@@ -92,6 +92,36 @@ if [ "${OPENSPEC_SUPPORT:-false}" = "true" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Graphify: per-project knowledge-graph skill (idempotent)
+#
+# The 'graphify' CLI is installed globally in the image (Dockerfile), but the
+# OpenCode skill registration and the knowledge graph itself are per-project,
+# so they belong here rather than baked into the image:
+#   - not yet registered for this project (.opencode/skills/graphify/ missing)
+#     -> register the skill project-scoped (lands in the rw project mount,
+#        not the ro ~/.config/opencode) and build the graph for the first time
+#   - already registered -> just refresh the graph incrementally
+# ---------------------------------------------------------------------------
+if command -v graphify >/dev/null 2>&1; then
+    if [ ! -d "$WORKDIR/.opencode/skills/graphify" ]; then
+        echo "Graphify: registering OpenCode skill for this project..."
+        setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
+            bash -c "cd \"$WORKDIR\" && graphify opencode install --project" 2>/dev/null || \
+            echo "Graphify: skill registration failed (non-fatal) — run 'graphify opencode install --project' manually"
+
+        echo "Graphify: building initial knowledge graph..."
+        setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
+            bash -c "cd \"$WORKDIR\" && graphify ." 2>/dev/null || \
+            echo "Graphify: initial build failed (non-fatal) — run 'graphify .' manually"
+    else
+        echo "Graphify: refreshing knowledge graph (incremental update)..."
+        setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
+            bash -c "cd \"$WORKDIR\" && graphify . --update" 2>/dev/null || \
+            echo "Graphify: update failed (non-fatal) — run 'graphify . --update' manually"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # LLM traffic interception (opt-in via setting.llm_interceptor_support)
 #
 # 'lli watch' runs on the HOST — containers use --network host, so the proxy is
