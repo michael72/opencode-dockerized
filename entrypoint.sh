@@ -94,6 +94,8 @@ fi
 # ---------------------------------------------------------------------------
 # Graphify: per-project knowledge-graph skill (idempotent)
 #
+# Enabled by default, opt out via setting.graphify_support=false.
+#
 # The 'graphify' CLI is installed globally in the image (Dockerfile), but the
 # OpenCode skill registration and the knowledge graph itself are per-project,
 # so they belong here rather than baked into the image:
@@ -102,7 +104,7 @@ fi
 #        not the ro ~/.config/opencode) and build the graph for the first time
 #   - already registered -> just refresh the graph incrementally
 # ---------------------------------------------------------------------------
-if command -v graphify >/dev/null 2>&1; then
+if [ "${GRAPHIFY_SUPPORT:-true}" = "true" ] && command -v graphify >/dev/null 2>&1; then
     if [ ! -d "$WORKDIR/.opencode/skills/graphify" ]; then
         echo "Graphify: registering OpenCode skill for this project..."
         setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \

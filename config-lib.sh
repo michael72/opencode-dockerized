@@ -75,6 +75,7 @@ OPENSPEC_SUPPORT=false           # Boolean flag for OpenSpec (spec-driven develo
 LLM_INTERCEPTOR_SUPPORT=false    # Boolean flag for routing LLM traffic through a host-side 'lli watch'
 LLM_INTERCEPTOR_PORT=9090        # Port the host-side 'lli watch' proxy listens on
 LLM_INTERCEPTOR_CAPTURE_LOCAL=false  # Also proxy loopback, so a local model (llama-server) is captured
+GRAPHIFY_SUPPORT=true            # Boolean flag for the per-project graphify knowledge graph (opt-out)
 
 # ============================================
 # SHARED HELPERS
@@ -220,6 +221,7 @@ build_common_docker_args() {
         -e "LLM_INTERCEPTOR_SUPPORT=$LLM_INTERCEPTOR_SUPPORT"
         -e "LLM_INTERCEPTOR_PORT=$LLM_INTERCEPTOR_PORT"
         -e "LLM_INTERCEPTOR_CAPTURE_LOCAL=$LLM_INTERCEPTOR_CAPTURE_LOCAL"
+        -e "GRAPHIFY_SUPPORT=$GRAPHIFY_SUPPORT"
     )
 
     # Pass terminal identification variables so applications inside the container
@@ -373,6 +375,13 @@ init_config_file() {
 #   lli watch --include '*127.0.0.1*'
 # setting.llm_interceptor_capture_local=false
 
+# Graphify (per-project code knowledge graph for the graphify skill)
+# Enabled by default. On launch the container registers the project-scoped
+# OpenCode skill and builds the graph, then refreshes it incrementally.
+# Set to false to skip that entirely (faster startup, no .opencode/skills/graphify).
+# See: https://pypi.org/project/graphifyy/
+# setting.graphify_support=true
+
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
 # Examples:
@@ -426,6 +435,7 @@ load_config() {
     LLM_INTERCEPTOR_SUPPORT=false
     LLM_INTERCEPTOR_PORT=9090
     LLM_INTERCEPTOR_CAPTURE_LOCAL=false
+    GRAPHIFY_SUPPORT=true
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ "$key" =~ ^[[:space:]]*setting\. ]] || continue
@@ -437,6 +447,8 @@ load_config() {
         [[ "$key" =~ llm_interceptor_support ]] && [[ "$value" == "true" ]] && LLM_INTERCEPTOR_SUPPORT=true
         [[ "$key" =~ llm_interceptor_port ]] && [[ "$value" =~ ^[0-9]+$ ]] && LLM_INTERCEPTOR_PORT="$value"
         [[ "$key" =~ llm_interceptor_capture_local ]] && [[ "$value" == "true" ]] && LLM_INTERCEPTOR_CAPTURE_LOCAL=true
+        # Opt-out setting: enabled unless explicitly disabled with =false
+        [[ "$key" =~ graphify_support ]] && [[ "$value" == "false" ]] && GRAPHIFY_SUPPORT=false
     done < "$CONFIG_FILE"
 
     return 0
@@ -470,6 +482,11 @@ save_config() {
         echo "# exempting loopback from the proxy. lli also needs a matching glob, e.g."
         echo "#   lli watch --include '*127.0.0.1*'"
         echo "setting.llm_interceptor_capture_local=$LLM_INTERCEPTOR_CAPTURE_LOCAL"
+        echo ""
+        echo "# Graphify (per-project code knowledge graph for the graphify skill)"
+        echo "# Enabled by default; set to false to skip skill registration and graph builds."
+        echo "# See: https://pypi.org/project/graphifyy/"
+        echo "setting.graphify_support=$GRAPHIFY_SUPPORT"
         echo ""
         echo "# Custom volume mounts (read-only by default)"
         echo "# Format: mount.<name>=<host_path>:<container_path>[:rw]"
@@ -942,6 +959,39 @@ prompt_llm_interceptor_support() {
     fi
 }
 
+# Interactive Graphify prompt
+# GRAPHIFY_SUPPORT defaults to true, so the question is phrased as an opt-out
+prompt_graphify_support() {
+    echo ""
+    config_info "Graphify Knowledge Graph (https://pypi.org/project/graphifyy/)"
+
+    if [ "$GRAPHIFY_SUPPORT" = true ]; then
+        config_success "Graphify is currently enabled"
+        read -r -p "Keep Graphify enabled? (Y/n): " graphify
+        if [[ "$graphify" =~ ^[Nn]$ ]]; then
+            GRAPHIFY_SUPPORT=false
+            config_info "Graphify disabled"
+        else
+            config_success "Graphify remains enabled"
+        fi
+    else
+        echo "Graphify builds a per-project code knowledge graph that the 'graphify'"
+        echo "OpenCode skill queries to navigate the codebase. When enabled, the skill is"
+        echo "registered project-scoped in .opencode/skills/graphify/ on first launch and"
+        echo "the graph is refreshed incrementally on every run."
+        echo ""
+
+        read -r -p "Enable Graphify support? (Y/n): " graphify
+        if [[ "$graphify" =~ ^[Nn]$ ]]; then
+            GRAPHIFY_SUPPORT=false
+            config_info "Graphify disabled"
+        else
+            GRAPHIFY_SUPPORT=true
+            config_success "Graphify support enabled"
+        fi
+    fi
+}
+
 # Print current configuration (for debugging/info)
 print_config() {
     echo ""
@@ -950,6 +1000,7 @@ print_config() {
     echo "  SSH agent forwarding: $SSH_AGENT_SUPPORT"
     echo "  OpenSpec support: $OPENSPEC_SUPPORT"
     echo "  LLM interception: $LLM_INTERCEPTOR_SUPPORT (port $LLM_INTERCEPTOR_PORT, capture_local $LLM_INTERCEPTOR_CAPTURE_LOCAL)"
+    echo "  Graphify support: $GRAPHIFY_SUPPORT"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
         echo ""
@@ -995,6 +1046,7 @@ interactive_config_setup() {
             prompt_ssh_agent_support
             prompt_openspec_support
             prompt_llm_interceptor_support
+            prompt_graphify_support
             prompt_custom_mounts
             prompt_env_vars
             save_config
@@ -1006,9 +1058,10 @@ interactive_config_setup() {
                 prompt_ssh_agent_support
                 prompt_openspec_support
                 prompt_llm_interceptor_support
+                prompt_graphify_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ]; then
                     save_config
                     print_config
                 else
