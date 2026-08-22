@@ -267,6 +267,7 @@ if [ "${LLM_INTERCEPTOR_SUPPORT:-false}" = "true" ]; then
     fi
 fi
 
+# start local plantuml server to use with `pumlcli`
 pumlsrv-server &
 
 # Use setpriv to drop privileges and exec the command as the mapped user
