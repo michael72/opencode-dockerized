@@ -5,7 +5,7 @@ models running in the container (Qwen, Devstral, GLM, and friends).
 
 | File | Replaces | Size | Built-in size |
 |------|----------|------|---------------|
-| `build-slim.md` | `default.txt` (build/plan agent) | ~2.4 KB | ~8.5 KB |
+| `build-slim.md` | `default.txt` (build/plan agent) | ~4.8 KB | ~8.5 KB |
 | `title-slim.md` | `title.txt` (session title agent) | ~0.7 KB | ~2.1 KB |
 
 ## Why
@@ -25,6 +25,15 @@ The slim versions keep what actually steers behaviour — concision, search
 before edit, check the library exists, verify with tests, don't commit unless
 asked, `file_path:line_number` — and drop the product boilerplate and the long
 verbosity examples.
+
+`build-slim.md` then **adds** two sections the built-in prompt does not have:
+`# Naming` (self-explanatory, fully spelled-out identifiers) and `# Above all`
+(think first, keep it simple, keep changes surgical). Those are house rules,
+not a slimming measure — together they are roughly half the file, and they are
+why it is 4.8 KB rather than the 2.4 KB it started at. Still well under the
+8.5 KB built-in, but if you want the prompt as small as it goes, delete them;
+if you want them to apply to every agent instead of just build/plan, move them
+into `AGENTS.md`.
 
 ## Enabling them
 
