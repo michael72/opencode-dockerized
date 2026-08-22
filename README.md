@@ -462,9 +462,27 @@ On every launch the entrypoint either
 
 - registers the skill project-scoped (`.opencode/skills/graphify/`, inside the writable
   project mount) and builds the graph for the first time, or
+- re-registers it when the image ships a newer graphify than the stamp in
+  `.opencode/skills/graphify/.graphify_version`, then refreshes the graph, or
 - refreshes an existing graph incrementally (`graphify . --update`).
 
-Both steps are non-fatal: a failure prints a hint and OpenCode starts anyway.
+It then generates the report and the slash command, neither of which the graphify CLI
+produces on its own:
+
+- **`graphify-out/GRAPH_REPORT.md`** (plus `graph.html`) via `graphify cluster-only .
+  --no-label`. A build stops at `graph.json` and `.graphify_analysis.json`; the
+  human-readable report only comes from the clustering step. `--no-label` leaves
+  communities as `Community N` rather than calling an LLM to name them, so startup needs
+  no API key, spends no tokens and makes no network calls — the same reason the build
+  runs with `--code-only`. Run `graphify label .` inside the container to name them once
+  a provider is configured.
+- **`/graphify`** via `.opencode/command/graphify.md`. `graphify opencode install` writes
+  a *skill*, which the model may call as a tool, but OpenCode reads slash commands from
+  `{command,commands}/**/*.md` — so nothing registers `/graphify` on its own. The file is
+  written once and your edits to it are kept; delete it to get the default back. It has
+  to live in the project because `~/.config/opencode` is mounted read-only.
+
+All steps are non-fatal: a failure prints a hint and OpenCode starts anyway.
 
 **To disable it** (e.g. for a huge repository where the initial build is slow, or when you
 do not want `.opencode/skills/graphify/` written into the project), answer "n" when
@@ -477,6 +495,17 @@ setting.graphify_support=false
 With graphify disabled nothing is registered and no graph is built or updated. The setting
 reaches the container as the `GRAPHIFY_SUPPORT` environment variable, which the entrypoint
 checks before touching graphify at all.
+
+Everything graphify writes is project-local and regenerable, so it is usually worth adding
+to the project's `.gitignore`:
+
+```gitignore
+/graphify-out/
+/.opencode/command/graphify.md
+/.opencode/plugins/graphify.js
+/.opencode/opencode.json
+/.opencode/skills/graphify/
+```
 
 ### Customizing System Prompts
 
