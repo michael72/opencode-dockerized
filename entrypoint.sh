@@ -96,16 +96,36 @@ fi
 #
 # Enabled by default, opt out via setting.graphify_support=false.
 #
-# The 'graphify' CLI is installed globally in the image (Dockerfile), but the
-# OpenCode skill registration and the knowledge graph itself are per-project,
-# so they belong here rather than baked into the image:
+# The 'graphify' CLI is installed globally in the image (Dockerfile), but
+# everything it registers is per-project, so it belongs here rather than baked
+# into the image — the project mount is writable, ~/.config/opencode is not:
 #   - not yet registered for this project (.opencode/skills/graphify/ missing)
-#     -> register the skill project-scoped (lands in the rw project mount,
-#        not the ro ~/.config/opencode) and build the graph for the first time
-#   - already registered -> just refresh the graph incrementally
+#     -> register the skill project-scoped and build the graph for the first time
+#   - registered by an older graphify (image was updated)
+#     -> re-register so SKILL.md matches the CLI, then refresh the graph
+#   - already registered and current -> just refresh the graph incrementally
+#
+# Two things the graphify CLI does not do on its own and that are added below:
+#   - GRAPH_REPORT.md: a build stops at graph.json + .graphify_analysis.json.
+#     The human-readable report (and the community clustering it summarises) is
+#     only written by 'graphify cluster-only'.
+#   - /graphify: OpenCode has no such command. 'graphify opencode install'
+#     writes a *skill*, which the model may call as a tool, while slash commands
+#     come from {command,commands}/**/*.md — so the command file is written here.
 # ---------------------------------------------------------------------------
 if [ "${GRAPHIFY_SUPPORT:-true}" = "true" ] && command -v graphify >/dev/null 2>&1; then
-    if [ ! -d "$WORKDIR/.opencode/skills/graphify" ]; then
+    GRAPHIFY_SKILL_DIR="$WORKDIR/.opencode/skills/graphify"
+    GRAPHIFY_COMMAND_FILE="$WORKDIR/.opencode/command/graphify.md"
+
+    # Version stamp written by 'graphify opencode install --project'; comparing it
+    # against the CLI in the image detects a skill left behind by an older image.
+    GRAPHIFY_CLI_VERSION=$(graphify --version 2>/dev/null | awk '{print $NF}' || true)
+    GRAPHIFY_SKILL_VERSION=""
+    if [ -f "$GRAPHIFY_SKILL_DIR/.graphify_version" ]; then
+        GRAPHIFY_SKILL_VERSION=$(cat "$GRAPHIFY_SKILL_DIR/.graphify_version" 2>/dev/null || true)
+    fi
+
+    if [ ! -d "$GRAPHIFY_SKILL_DIR" ]; then
         echo "Graphify: registering OpenCode skill for this project..."
         setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
             bash -c "cd \"$WORKDIR\" && graphify opencode install --project" 2>/dev/null || \
@@ -116,10 +136,70 @@ if [ "${GRAPHIFY_SUPPORT:-true}" = "true" ] && command -v graphify >/dev/null 2>
             bash -c "cd \"$WORKDIR\" && graphify . --code-only " || \
             echo "Graphify: initial build failed (non-fatal) — run 'graphify .' manually"
     else
+        if [ -n "$GRAPHIFY_CLI_VERSION" ] && [ "$GRAPHIFY_SKILL_VERSION" != "$GRAPHIFY_CLI_VERSION" ]; then
+            echo "Graphify: skill is from ${GRAPHIFY_SKILL_VERSION:-an unknown version}, image ships $GRAPHIFY_CLI_VERSION — re-registering..."
+            setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
+                bash -c "cd \"$WORKDIR\" && graphify opencode install --project" 2>/dev/null || \
+                echo "Graphify: skill refresh failed (non-fatal) — run 'graphify opencode install --project' manually"
+        fi
+
         echo "Graphify: refreshing knowledge graph (incremental update)..."
         setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
             bash -c "cd \"$WORKDIR\" && graphify . --code-only --update" || \
             echo "Graphify: update failed (non-fatal) — run 'graphify . --update' manually"
+    fi
+
+    # GRAPH_REPORT.md + graph.html from the graph that was just written.
+    # '--no-label' leaves communities as "Community N" instead of calling an LLM
+    # to name them, which keeps startup free of API keys, tokens and network —
+    # the same reason the build above uses '--code-only'. To name them, run
+    # 'graphify label .' inside the container once a provider is configured.
+    if [ -f "$WORKDIR/graphify-out/graph.json" ]; then
+        echo "Graphify: writing graphify-out/GRAPH_REPORT.md..."
+        setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
+            bash -c "cd \"$WORKDIR\" && graphify cluster-only . --no-label" || \
+            echo "Graphify: report generation failed (non-fatal) — run 'graphify cluster-only . --no-label' manually"
+    fi
+
+    # /graphify slash command. OpenCode reads commands from
+    # {command,commands}/**/*.md under the project's .opencode/ and under its
+    # config dir; the latter is mounted read-only, so the project copy is the
+    # only writable option. Written once — edits to the file are kept.
+    if [ ! -f "$GRAPHIFY_COMMAND_FILE" ]; then
+        echo "Graphify: adding the /graphify command for OpenCode..."
+        mkdir -p "$WORKDIR/.opencode/command"
+        cat > "$GRAPHIFY_COMMAND_FILE" <<'GRAPHIFY_COMMAND_EOF'
+---
+description: Build or query this project's graphify knowledge graph
+---
+
+Use the `graphify` skill to answer this request.
+
+Arguments: $ARGUMENTS
+
+If no arguments were given, summarise the existing graph: read
+`graphify-out/GRAPH_REPORT.md` and run `graphify god-nodes`.
+
+The graph already exists at `graphify-out/` — the container builds it on first
+launch and refreshes it on every start, so there is no need to run a full build.
+Query it instead of grepping raw files:
+
+- `graphify query "<question>"` — scoped subgraph for a question
+- `graphify path "<A>" "<B>"` — shortest path between two nodes
+- `graphify explain "<X>"` — plain-language explanation of a node
+- `graphify affected "<X>"` — what a change to X reaches
+- `graphify god-nodes` — the most connected nodes
+- `graphify . --code-only --update` — re-index after editing files
+
+Communities are unnamed (`Community N`) because the startup build runs without
+an LLM. `graphify label .` names them once a provider is configured.
+
+Do not answer from raw files before consulting the graph.
+GRAPHIFY_COMMAND_EOF
+        # Written as root (privileges drop only at the exec below), so hand the
+        # command file and any directory just created back to the host user.
+        chown "$TARGET_UID:$TARGET_GID" \
+            "$WORKDIR/.opencode" "$WORKDIR/.opencode/command" "$GRAPHIFY_COMMAND_FILE" 2>/dev/null || true
     fi
 fi
 
