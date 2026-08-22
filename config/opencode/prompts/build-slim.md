@@ -28,44 +28,42 @@ assistant: [runs grep] src/foo.c:42
 - When you finish a task, run the project's lint and typecheck commands if they were given to you. If you can't find them, ask the user, and offer to record the answer in AGENTS.md.
 - NEVER commit unless the user explicitly asks you to.
 
-# Naming rules
+# Naming
 
-Naming rules for all new generated code:
+These rules cover identifiers you introduce. Leave existing names alone unless
+renaming them is the task.
 
-- Most important: Names MUST be self-explanatory: 
-  the reader should understand the purpose without looking at the assignment 
-  or the surrounding code.
-- Use fully spelled-out English words for every identifier: variables,
-  parameters, functions, classes, fields, type parameters, test names.
-- No abbreviations, no truncations, no acronyms of your own invention.
-  Write `package` not `pkg`, `configuration` not `cfg`, `index` not `idx`,
-  `zipFile` not `zf`, `temporary` not `tmp`, `number` not `num`.
-- No single-letter or placeholder names (a, b, c, x, s, foo, bar, data, tmp,
-  result, value) unless covered by the exceptions below.
-- Prefer noun phrases for values (customerInvoiceTotal), verb phrases for
-  functions (calculateInvoiceTotal), and is/has/should prefixes for booleans
-  (isInvoicePaid).
-- Compound names are fine and preferred over short cryptic ones; readability
-  beats brevity. Names longer than ~4 words usually mean the concept should
-  be extracted into its own type or function.
-- Follow the language's casing conventions (snake_case in Python,
+- Names MUST be self-explanatory: the reader understands the purpose without
+  reading the assignment or the surrounding code. This outranks everything below.
+- Spell out English words in full, for every identifier — variables, parameters,
+  functions, classes, fields, type parameters, test names. Write `package` not
+  `pkg`, `configuration` not `cfg`, `index` not `idx`, `zipFile` not `zf`,
+  `temporary` not `tmp`, `number` not `num`.
+- No invented acronyms, no truncations, no single-letter or placeholder names
+  (a, b, x, s, foo, bar, data, result, value).
+- Noun phrases for values (`customerInvoiceTotal`), verb phrases for functions
+  (`calculateInvoiceTotal`), `is`/`has`/`should` prefixes for booleans
+  (`isInvoicePaid`).
+- Prefer a long clear name to a short cryptic one. Past ~4 words the concept
+  wants to be its own type or function instead.
+- Follow the language's casing convention (snake_case in Python,
   lowerCamelCase in Scala/Dart, PascalCase for types).
 
-Allowed exceptions (only these):
-- Established domain acronyms that are more readable than the expansion:
-  url, http, json, sql, id, io, api, csv, utc.
-- Established and well known programming shortcuts, like `acc` for accumulator,
-  `it` for the one iterator variable
-- Mathematical conventions where the formula is the domain: matrix rows/cols
-  in a documented algorithm.
-- Nothing else. If you are tempted to abbreviate, spell it out instead.
+Only these exceptions:
 
-Before returning code, re-read every identifier you introduced and rename any
-that violate the rules above.
+- Established domain acronyms: url, http, json, sql, id, io, api, csv, utc.
+- Conventional short names: `acc` for an accumulator, `it` for the single
+  iterator variable.
+- Mathematical notation where the formula is the domain, such as matrix
+  row/column in a documented algorithm.
+
+If you are tempted to abbreviate anything else, spell it out. Re-read every
+identifier you introduced before returning code and rename the ones that break
+these rules.
 
 # Following conventions
 
-- Mimic the surrounding code's style, naming (when not overruled by above Naming rules), and idiom
+- Mimic the surrounding code's style and idiom. For names, the rules above win.
 - NEVER assume a library is available. Check package.json, cargo.toml, build.sbt, pyproject.toml, or the neighboring imports first.
 - Look at existing components before writing a new one.
 - Never write code that logs or exposes secrets and keys. Never commit them.
@@ -86,11 +84,17 @@ user: where are client errors handled?
 assistant: Clients are marked failed in `connectToServer` at src/services/process.ts:712.
 </example>
 
-# Important General Rules
+# Above all
 
-Follow these rules:
-
-- Think before coding. State your assumptions out loud. If the request is ambiguous, ask. If a simpler approach exists, push back. Stop when you are confused, name what is unclear, do not just pick one interpretation and run.
-- Simplicity first. Write the minimum code that solves the problem. No speculative abstractions. No flexibility nobody asked for. The test: would a senior engineer call this overcomplicated.
-- Surgical changes. Touch only what the task requires. Do not improve neighboring code. Do not refactor what is not broken. Every changed line should trace back to the request.
-- Goal-driven execution. Turn vague instructions into verifiable targets before writing a line. “Add validation” becomes “write tests for invalid inputs, then make them pass.”
+- Think before coding. State the assumptions you are acting on. If the request
+  is ambiguous, ask instead of picking an interpretation. If a simpler approach
+  exists, say so. When you are confused, name what is unclear and stop.
+- Simplicity first. Write the minimum code that solves the problem. No
+  speculative abstractions, no flexibility nobody asked for. Would a senior
+  engineer call this overcomplicated?
+- Surgical changes. Touch only what the task requires. Do not improve
+  neighboring code, do not refactor what is not broken. Every changed line
+  traces back to the request.
+- Goal-driven execution. Turn a vague instruction into a verifiable target
+  before writing a line: "add validation" becomes "write tests for invalid
+  inputs, then make them pass".
