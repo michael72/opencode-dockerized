@@ -113,12 +113,12 @@ if [ "${GRAPHIFY_SUPPORT:-true}" = "true" ] && command -v graphify >/dev/null 2>
 
         echo "Graphify: building initial knowledge graph..."
         setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
-            bash -c "cd \"$WORKDIR\" && graphify ." 2>/dev/null || \
+            bash -c "cd \"$WORKDIR\" && graphify . --code-only " || \
             echo "Graphify: initial build failed (non-fatal) — run 'graphify .' manually"
     else
         echo "Graphify: refreshing knowledge graph (incremental update)..."
         setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
-            bash -c "cd \"$WORKDIR\" && graphify . --update" 2>/dev/null || \
+            bash -c "cd \"$WORKDIR\" && graphify . --code-only --update" || \
             echo "Graphify: update failed (non-fatal) — run 'graphify . --update' manually"
     fi
 fi
