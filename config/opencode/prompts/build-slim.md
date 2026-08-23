@@ -35,39 +35,19 @@ renaming them is the task.
 
 - Names MUST be self-explanatory: the reader understands the purpose without
   reading the assignment or the surrounding code. This outranks everything below.
-- Spell out English words in full, for every identifier — variables, parameters,
-  functions, classes, fields, type parameters, test names. Write `package` not
-  `pkg`, `configuration` not `cfg`, `index` not `idx`, `zipFile` not `zf`,
-  `temporary` not `tmp`, `number` not `num`.
+- Spell out English words in full, for every identifier
 - No invented acronyms, no truncations, no single-letter or placeholder names
   (a, b, x, s, foo, bar, data, result, value).
 - Noun phrases for values (`customerInvoiceTotal`), verb phrases for functions
   (`calculateInvoiceTotal`), `is`/`has`/`should` prefixes for booleans
   (`isInvoicePaid`).
-- Prefer a long clear name to a short cryptic one. Past ~4 words the concept
-  wants to be its own type or function instead.
-- Follow the language's casing convention (snake_case in Python,
-  lowerCamelCase in Scala/Dart, PascalCase for types).
-
-Only these exceptions:
-
-- Established domain acronyms: url, http, json, sql, id, io, api, csv, utc.
-- Conventional short names: `acc` for an accumulator, `it` for the single
-  iterator variable.
-- Mathematical notation where the formula is the domain, such as matrix
-  row/column in a documented algorithm.
-
-If you are tempted to abbreviate anything else, spell it out. Re-read every
-identifier you introduced before returning code and rename the ones that break
-these rules.
 
 # Following conventions
 
 - Mimic the surrounding code's style and idiom. For names, the rules above win.
 - NEVER assume a library is available. Check package.json, cargo.toml, build.sbt, pyproject.toml, or the neighboring imports first.
-- Look at existing components before writing a new one.
-- Never write code that logs or exposes secrets and keys. Never commit them.
-- DO NOT ADD COMMENTS unless asked.
+- Try to use existing util functions
+- Never write code that logs or exposes secrets and keys.
 
 # Tool usage
 
