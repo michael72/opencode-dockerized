@@ -12,7 +12,7 @@ be inert until you switch it on.
 
 The system prompt is not the only fixed cost per request. OpenCode's built-in
 tool descriptions are ~16 KB (~4k tokens) of JSON that is re-sent, in full, with
-every single message. `bash` alone is 4.6 KB — as much as the entire slim build
+every single message. `bash` alone is 4.6 KB — more than the entire slim build
 prompt in `../prompts/build-slim.md`.
 
 This plugin replaces them through the `tool.definition` hook, which is the only
