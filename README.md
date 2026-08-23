@@ -524,14 +524,14 @@ This repo ships slimmed-down replacements in `config/opencode/prompts/`, which
 
 | File | Replaces | Size | Built-in |
 |------|----------|------|----------|
-| `build-slim.md` | build/plan agent prompt | ~4.8 KB | ~8.5 KB |
+| `build-slim.md` | build/plan agent prompt | ~3.3 KB | ~8.5 KB |
 | `title-slim.md` | session title agent prompt | ~0.7 KB | ~2.1 KB |
 
 `build-slim.md` is not only a trim: on top of the slimmed built-in rules it adds
 a `# Naming` section (self-explanatory, fully spelled-out identifiers) and an
 `# Above all` section (think first, keep it simple, keep changes surgical).
-Those are opinionated house rules — delete the two sections if you only want
-the size win.
+Those are opinionated house rules and the last ~1.3 KB of the file — delete the
+two sections if you only want the size win.
 
 They are **not active by default**. To enable them, add to
 `~/.config/opencode/opencode.json`:
@@ -565,8 +565,7 @@ for the full details, the plugin snippet, and the caveats.
 
 The system prompt is only half the fixed cost. OpenCode's built-in **tool
 descriptions** are another ~16 KB (~4k tokens) of JSON, re-sent in full with
-every message — `bash` alone is 4.6 KB, about the size of the whole slim build
-prompt.
+every message — `bash` alone is 4.6 KB, more than the whole slim build prompt.
 
 `config/opencode/plugin/slim-tools.js`, copied to
 `~/.config/opencode/plugin/` by `setup.sh`, rewrites them through OpenCode's
