@@ -21,7 +21,7 @@ assistant: Yes
 
 <example>
 user: where are client errors handled?
-assistant: [runs grep] Clients are marked failed in `connectToServer` at src/services/process.ts:712.
+assistant: [uses graphify, grep as backup] Clients are marked failed in `connectToServer` at src/services/process.ts:712.
 </example>
 
 # Doing tasks
