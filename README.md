@@ -272,6 +272,7 @@ setting.openspec_support=true
 setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.graphify_support=true
+setting.matt_pocock_skills_support=false
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -506,6 +507,60 @@ to the project's `.gitignore`:
 /.opencode/opencode.json
 /.opencode/skills/graphify/
 ```
+
+### Matt Pocock's Agent Skills
+
+The image also stages [Matt Pocock's agent skills](https://github.com/mattpocock/skills) —
+a set of engineering and productivity disciplines (`grilling`, `tdd`, `code-review`,
+`domain-modeling`, `to-spec`, `to-tickets`, `triage`, …). They are **opt-in**:
+
+```ini
+setting.matt_pocock_skills_support=true
+```
+
+or answer "y" when `./setup.sh` asks. The setting reaches the container as the
+`MATT_POCOCK_SKILLS_SUPPORT` environment variable, which the entrypoint checks before
+touching anything.
+
+When enabled, the entrypoint copies the skills to `~/.agents/skills/` inside the
+container on every launch. That path matters: OpenCode scans
+`~/.agents/skills/**/SKILL.md` and `~/.claude/skills/**/SKILL.md` globally, on top of the
+project-local `.opencode/`, `.claude/` and `.agents/` directories. `~/.config/opencode` is
+mounted read-only, so `~/.agents` is the only *global* skill location the container can
+write to — and using it keeps the project directory clean, unlike the project-scoped
+registration graphify needs. The container runs with `--rm`, so the copy is fresh on every
+launch and nothing is left behind on the host.
+
+Nothing has to register a slash command: OpenCode exposes every discovered skill as a
+command of the same name. So once the container is up:
+
+```bash
+# Once per repository — sets up the issue tracker, triage labels and domain doc layout
+# that the engineering skills read from
+/setup-matt-pocock-skills
+
+# Then, e.g.
+/grill-me
+/tdd
+/code-review
+```
+
+The skills are installed at **build** time with the upstream installer
+(`npx skills@latest add mattpocock/skills --skill '*' --agent opencode --global`), so they
+are pinned to whatever the repository's default branch had when the image was built.
+`./opencode-dockerized.sh update` refreshes them along with OpenCode; a plain `build` reuses
+the cached layer.
+
+**Alternative without rebuilding the image:** run the same installer on the host, then mount
+the result. `skills --global` always writes to `~/.agents/skills` on the host, which is not
+mounted by default, so add the mount yourself:
+
+```ini
+mount.agent_skills=~/.agents:/home/coder/.agents
+```
+
+That route also lets you install only some of the skills (`--skill tdd --skill code-review`)
+and update them with `npx skills@latest update` without a rebuild.
 
 ### Customizing System Prompts
 

@@ -7,7 +7,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 **Key files:**
 - `opencode-dockerized.sh` — Main wrapper (build, run, auth, update, config, clean commands)
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
-- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode + OpenSpec)
+- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode + OpenSpec). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` when `setting.matt_pocock_skills_support` is on
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
 - `setup.sh` — First-time config directory initialization
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
@@ -157,6 +157,7 @@ setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.llm_interceptor_capture_local=false
 setting.graphify_support=true
+setting.matt_pocock_skills_support=false
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 ```

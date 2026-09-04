@@ -34,6 +34,15 @@
 #
 # setting.openspec_support=true
 
+# Matt Pocock's agent skills (grilling, TDD, code review, domain modelling, ...)
+# When enabled, the skills baked into the image are copied to ~/.agents/skills inside
+# the container on every launch, where OpenCode discovers them for every project.
+# Each skill also becomes a slash command; run /setup-matt-pocock-skills once per
+# repository before using the engineering skills.
+# See: https://github.com/mattpocock/skills
+#
+# setting.matt_pocock_skills_support=true
+
 # ============================================
 # Custom Volume Mounts
 # ============================================
