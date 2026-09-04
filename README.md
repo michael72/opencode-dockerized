@@ -527,12 +527,19 @@ container on every launch. That path matters: OpenCode scans
 `~/.agents/skills/**/SKILL.md` and `~/.claude/skills/**/SKILL.md` globally, on top of the
 project-local `.opencode/`, `.claude/` and `.agents/` directories. `~/.config/opencode` is
 mounted read-only, so `~/.agents` is the only *global* skill location the container can
-write to — and using it keeps the project directory clean, unlike the project-scoped
+write to — the skills themselves never touch the project, unlike the project-scoped
 registration graphify needs. The container runs with `--rm`, so the copy is fresh on every
 launch and nothing is left behind on the host.
 
-Nothing has to register a slash command: OpenCode exposes every discovered skill as a
-command of the same name. So once the container is up:
+OpenCode does register every discovered skill as a command of its own name, so typing a
+skill name in full always works. Its TUI, however, skips skill-sourced entries when it
+builds the `/` autocomplete list, so a skill never *appears* in the menu — you have to
+know the name already. The entrypoint therefore also writes a one-line wrapper command
+into the project's `.opencode/command/` for each skill upstream marks
+`disable-model-invocation` (its flag for "only the human invokes this" — 22 of the 37,
+`setup-matt-pocock-skills` among them). Those show up in the menu like any other command.
+The model-invoked skills are deliberately left out: the model reaches them through the
+`skill` tool on its own, and 15 more entries would bury the built-in commands.
 
 ```bash
 # Once per repository — sets up the issue tracker, triage labels and domain doc layout
@@ -541,8 +548,23 @@ command of the same name. So once the container is up:
 
 # Then, e.g.
 /grill-me
+/to-tickets
+/triage
+
+# Model-invoked skills have no menu entry, but still run when typed in full
 /tdd
 /code-review
+```
+
+The wrappers live in the project rather than under `$HOME` for a practical reason:
+OpenCode treats every config directory as an npm root and background-installs
+`@opencode-ai/plugin` (~60 MB) into it. In a `--rm` container a `~/.opencode` would
+re-download that on every launch, while the project directory keeps it. Each file is
+written only if missing, so your edits survive; delete one to get the default back. They
+are regenerable, so they belong in the project's `.gitignore` next to graphify's:
+
+```gitignore
+/.opencode/command/
 ```
 
 The skills are installed at **build** time with the upstream installer

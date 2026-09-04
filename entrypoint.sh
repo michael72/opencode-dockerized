@@ -207,32 +207,89 @@ fi
 # Matt Pocock's agent skills (opt-in via setting.matt_pocock_skills_support)
 #
 # The image stages them under $MATT_POCOCK_SKILLS_DIR/.agents/skills, written at
-# build time by the upstream 'skills' installer (Dockerfile). All this has to do
-# is put them where OpenCode looks.
+# build time by the upstream 'skills' installer (Dockerfile). Two separate
+# things are needed to make them usable, and OpenCode treats them differently.
 #
-# OpenCode scans ~/.agents/skills/**/SKILL.md globally, in addition to the
-# project-local .opencode/, .claude/ and .agents/ directories. ~/.agents is the
-# only global skill location the container can write to — ~/.config/opencode is
-# a read-only mount — and it is also the one that keeps the project directory
-# clean, unlike the project-scoped registration graphify needs. The container
-# runs with --rm, so this is a fresh copy on every launch.
+# 1. Discovery. OpenCode scans ~/.agents/skills/**/SKILL.md globally, on top of
+#    the project-local .opencode/, .claude/ and .agents/ directories. ~/.agents
+#    is the only global skill location the container can write to —
+#    ~/.config/opencode is a read-only mount — and it keeps the project
+#    directory clean, unlike the project-scoped registration graphify needs.
 #
-# No slash command has to be registered: OpenCode exposes every discovered skill
-# as a command of the same name, which is what makes '/setup-matt-pocock-skills'
-# (the once-per-repo setup the other engineering skills expect) work.
+# 2. Slash commands. OpenCode does register every discovered skill as a command
+#    of its own name, so typing '/setup-matt-pocock-skills' in full works, but
+#    its TUI skips skill-sourced entries when it builds the '/' autocomplete
+#    list (`if (serverCommand.source === "skill") continue`), so a skill is
+#    invisible unless you already know the name. Commands loaded from
+#    {command,commands}/**/*.md are not skipped, so a wrapper file is written
+#    for each skill upstream marks 'disable-model-invocation' — its flag for
+#    "only the human invokes this", exactly the set that needs to be in the
+#    menu. Model-invoked skills are left out: the model reaches those through
+#    the skill tool by itself, and the extra entries would bury the built-ins.
+#
+# The wrappers go in the project alongside graphify's, not under $HOME. ~/.opencode
+# would keep the project clean, but OpenCode treats every config directory as an
+# npm root and background-installs @opencode-ai/plugin (~60MB) into it — in a --rm
+# container that is a fresh download on every launch, while the project directory
+# keeps it. Files are written once; edits to them are kept.
 # ---------------------------------------------------------------------------
 if [ "${MATT_POCOCK_SKILLS_SUPPORT:-false}" = "true" ]; then
     MATT_POCOCK_SKILLS_STAGE="${MATT_POCOCK_SKILLS_DIR:-/opt/matt-pocock-skills}/.agents/skills"
+    MATT_POCOCK_COMMAND_DIR="$WORKDIR/.opencode/command"
 
-    if [ -d "$MATT_POCOCK_SKILLS_STAGE" ]; then
+    if [ ! -d "$MATT_POCOCK_SKILLS_STAGE" ]; then
+        echo "Matt Pocock skills: not staged in this image (non-fatal) — rebuild with './opencode-dockerized.sh build'"
+    else
         echo "Matt Pocock skills: installing into ~/.agents/skills..."
         mkdir -p /home/coder/.agents/skills
-        cp -R "$MATT_POCOCK_SKILLS_STAGE/." /home/coder/.agents/skills/ || \
+
+        if ! cp -R "$MATT_POCOCK_SKILLS_STAGE/." /home/coder/.agents/skills/; then
             echo "Matt Pocock skills: copy failed (non-fatal) — skills will not be available"
-        # Written as root (privileges drop only at the exec below).
+        else
+            mkdir -p "$MATT_POCOCK_COMMAND_DIR"
+            mp_written=0
+
+            for mp_skill in /home/coder/.agents/skills/*/SKILL.md; do
+                if [ ! -f "$mp_skill" ]; then continue; fi
+
+                # Upstream's marker for a skill only the human is meant to fire.
+                # OpenCode ignores the field itself; it is read here purely to
+                # pick which skills earn a slash command.
+                if ! grep -qE '^disable-model-invocation:[[:space:]]*true' "$mp_skill"; then continue; fi
+
+                mp_name=$(basename "$(dirname "$mp_skill")")
+                mp_file="$MATT_POCOCK_COMMAND_DIR/$mp_name.md"
+                if [ -f "$mp_file" ]; then continue; fi
+
+                # The description is what the menu shows. Re-encode it as JSON
+                # instead of passing the source line through: JSON scalars are
+                # valid YAML, and OpenCode aborts its entire config load over a
+                # single command file whose frontmatter does not parse.
+                mp_desc=$(sed -n 's/^description:[[:space:]]*//p' "$mp_skill" | head -n 1)
+                mp_desc=$(printf '%s' "$mp_desc" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")
+                mp_desc_yaml=$(printf '%s' "$mp_desc" | jq -Rs '.' 2>/dev/null || true)
+
+                {
+                    echo "---"
+                    if [ -n "$mp_desc_yaml" ]; then echo "description: $mp_desc_yaml"; fi
+                    echo "---"
+                    echo ""
+                    echo "Call the skill tool with \"$mp_name\", then follow it."
+                    echo ""
+                    echo "Arguments: \$ARGUMENTS"
+                } > "$mp_file"
+
+                mp_written=$((mp_written + 1))
+            done
+
+            echo "Matt Pocock skills: added $mp_written slash commands in .opencode/command"
+
+            # Written as root (privileges drop only at the exec below), so hand
+            # the project-side files back to the host user.
+            chown -R "$TARGET_UID:$TARGET_GID" "$WORKDIR/.opencode" 2>/dev/null || true
+        fi
+
         chown -R "$TARGET_UID:$TARGET_GID" /home/coder/.agents 2>/dev/null || true
-    else
-        echo "Matt Pocock skills: not staged in this image (non-fatal) — rebuild with './opencode-dockerized.sh build'"
     fi
 fi
 
