@@ -127,6 +127,23 @@ RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g opencode-ai@latest @fissio
 # Switch back to root for entrypoint setup
 USER root
 
+# Matt Pocock's agent skills, staged in the image (opt-in via
+# setting.matt_pocock_skills_support — entrypoint.sh copies them into
+# ~/.agents/skills at launch when the setting is on).
+#
+# The upstream installer ('skills', from vercel-labs) always writes a global
+# install to $HOME/.agents/skills, so HOME is pointed at the staging directory
+# to redirect it. The layer sits after the OPENCODE_BUILD_TIME ARG above, so
+# './opencode-dockerized.sh update' refreshes the skills along with OpenCode.
+# See: https://github.com/mattpocock/skills
+ENV MATT_POCOCK_SKILLS_DIR=/opt/matt-pocock-skills
+RUN mkdir -p "$MATT_POCOCK_SKILLS_DIR" && \
+    bash -c "source $NVM_DIR/nvm.sh && \
+    HOME=$MATT_POCOCK_SKILLS_DIR npx --yes skills@latest add mattpocock/skills \
+        --skill '*' --agent opencode --global --yes < /dev/null" && \
+    rm -rf "$MATT_POCOCK_SKILLS_DIR/.npm" "$MATT_POCOCK_SKILLS_DIR/.cache" && \
+    chmod -R a+rX "$MATT_POCOCK_SKILLS_DIR"
+
 # Create necessary directories with proper permissions
 RUN mkdir -p /home/coder/.config/opencode && \
     mkdir -p /home/coder/.config/openspec && \
