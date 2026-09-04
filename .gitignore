@@ -38,3 +38,6 @@ credentials.json
 /.opencode/plugins/graphify.js
 /.opencode/opencode.json
 /.opencode/skills/graphify/
+
+# Generated when setting.matt_pocock_skills_support is enabled
+/.opencode/command/
