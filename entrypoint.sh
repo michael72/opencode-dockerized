@@ -357,6 +357,29 @@ if [ "${LLM_INTERCEPTOR_SUPPORT:-false}" = "true" ]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# Approval-free /tmp access (enabled by default, opt out via
+# setting.tmp_access_support=false)
+#
+# OpenCode asks for `external_directory` approval whenever a tool touches a path
+# outside the project directory, and whitelists only its own temp directory. In a
+# container /tmp is throwaway state that dies with the container, so that prompt
+# costs a confirmation per scratch file and protects nothing.
+#
+# The permission resource is the containing directory plus "/*" — writing
+# /tmp/build/out.log asks for "/tmp/build/*" — so the single pattern "/tmp/*"
+# covers /tmp and everything below it.
+#
+# OPENCODE_PERMISSION is merged over the "permission" block of
+# ~/.config/opencode/opencode.json, which is mounted read-only and can therefore
+# not be extended here. An OPENCODE_PERMISSION passed in from the host (via
+# env.<name>=OPENCODE_PERMISSION) is left alone, so it stays overridable.
+# See: https://opencode.ai/docs/permissions/
+# ---------------------------------------------------------------------------
+if [ "${TMP_ACCESS_SUPPORT:-true}" = "true" ] && [ -z "${OPENCODE_PERMISSION:-}" ]; then
+    export OPENCODE_PERMISSION='{"external_directory":{"/tmp/*":"allow"}}'
+fi
+
 # start local plantuml server to use with `pumlcli`
 pumlsrv-server &
 

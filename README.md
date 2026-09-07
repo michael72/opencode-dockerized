@@ -272,6 +272,7 @@ setting.openspec_support=true
 setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.graphify_support=true
+setting.tmp_access_support=true
 setting.matt_pocock_skills_support=false
 
 # Custom volume mounts (read-only by default)
@@ -507,6 +508,38 @@ to the project's `.gitignore`:
 /.opencode/opencode.json
 /.opencode/skills/graphify/
 ```
+
+### /tmp Access Without Prompts
+
+OpenCode asks for approval (`external_directory`) whenever a tool touches a path outside
+the project directory — only its own temp directory is whitelisted. In a container that
+means a confirmation for every scratch file a build session writes under `/tmp`, for state
+that is thrown away with the container and never reaches the host.
+
+This is therefore **enabled by default**: the entrypoint exports
+
+```json
+OPENCODE_PERMISSION={"external_directory":{"/tmp/*":"allow"}}
+```
+
+which OpenCode merges over the `permission` block of `~/.config/opencode/opencode.json`
+(that mount is read-only, so the container cannot extend the file itself). The permission
+resource is the containing directory plus `/*` — writing `/tmp/build/out.log` asks for
+`/tmp/build/*` — so the single `/tmp/*` pattern covers `/tmp` and everything below it.
+Nothing else is widened: paths outside the project **and** outside `/tmp` still ask.
+
+**To disable it**, answer "n" when `./setup.sh` asks, or set it manually in
+`~/.config/opencode-dockerized/config`:
+
+```ini
+setting.tmp_access_support=false
+```
+
+The setting reaches the container as the `TMP_ACCESS_SUPPORT` environment variable. An
+`OPENCODE_PERMISSION` passed in from the host (`env.permission=OPENCODE_PERMISSION`) always
+wins — the entrypoint only sets the variable when it is not already there, so you can hand
+in a broader or narrower rule set of your own. See
+[OpenCode permissions](https://opencode.ai/docs/permissions/).
 
 ### Matt Pocock's Agent Skills
 

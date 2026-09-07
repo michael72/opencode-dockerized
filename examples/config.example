@@ -34,6 +34,13 @@
 #
 # setting.openspec_support=true
 
+# Approval-free /tmp access (OpenCode external_directory permission)
+# Enabled by default. Without it OpenCode asks before any tool touches a path outside
+# the project directory, /tmp included — a confirmation per scratch file, for state that
+# lives and dies inside the container. Set to false to get those prompts back.
+#
+# setting.tmp_access_support=true
+
 # Matt Pocock's agent skills (grilling, TDD, code review, domain modelling, ...)
 # When enabled, the skills baked into the image are copied to ~/.agents/skills inside
 # the container on every launch, where OpenCode discovers them for every project.

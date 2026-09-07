@@ -76,6 +76,7 @@ LLM_INTERCEPTOR_SUPPORT=false    # Boolean flag for routing LLM traffic through 
 LLM_INTERCEPTOR_PORT=9090        # Port the host-side 'lli watch' proxy listens on
 LLM_INTERCEPTOR_CAPTURE_LOCAL=false  # Also proxy loopback, so a local model (llama-server) is captured
 GRAPHIFY_SUPPORT=true            # Boolean flag for the per-project graphify knowledge graph (opt-out)
+TMP_ACCESS_SUPPORT=true          # Boolean flag for approval-free /tmp access inside the container (opt-out)
 MATT_POCOCK_SKILLS_SUPPORT=false # Boolean flag for Matt Pocock's agent skills (~/.agents/skills)
 
 # ============================================
@@ -223,6 +224,7 @@ build_common_docker_args() {
         -e "LLM_INTERCEPTOR_PORT=$LLM_INTERCEPTOR_PORT"
         -e "LLM_INTERCEPTOR_CAPTURE_LOCAL=$LLM_INTERCEPTOR_CAPTURE_LOCAL"
         -e "GRAPHIFY_SUPPORT=$GRAPHIFY_SUPPORT"
+        -e "TMP_ACCESS_SUPPORT=$TMP_ACCESS_SUPPORT"
         -e "MATT_POCOCK_SKILLS_SUPPORT=$MATT_POCOCK_SKILLS_SUPPORT"
     )
 
@@ -384,6 +386,12 @@ init_config_file() {
 # See: https://pypi.org/project/graphifyy/
 # setting.graphify_support=true
 
+# Approval-free /tmp access (OpenCode external_directory permission)
+# Enabled by default. OpenCode asks before a tool touches a path outside the project;
+# in a container /tmp is throwaway state, so the prompt is pure friction.
+# Set to false to get the confirmation prompt for /tmp back.
+# setting.tmp_access_support=true
+
 # Matt Pocock's agent skills (grilling, TDD, code review, domain modelling, ...)
 # When enabled, the skills staged in the image are copied to ~/.agents/skills inside
 # the container, where OpenCode picks them up globally for every project. Each skill
@@ -445,6 +453,7 @@ load_config() {
     LLM_INTERCEPTOR_PORT=9090
     LLM_INTERCEPTOR_CAPTURE_LOCAL=false
     GRAPHIFY_SUPPORT=true
+    TMP_ACCESS_SUPPORT=true
     MATT_POCOCK_SKILLS_SUPPORT=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
@@ -459,6 +468,7 @@ load_config() {
         [[ "$key" =~ llm_interceptor_capture_local ]] && [[ "$value" == "true" ]] && LLM_INTERCEPTOR_CAPTURE_LOCAL=true
         # Opt-out setting: enabled unless explicitly disabled with =false
         [[ "$key" =~ graphify_support ]] && [[ "$value" == "false" ]] && GRAPHIFY_SUPPORT=false
+        [[ "$key" =~ tmp_access_support ]] && [[ "$value" == "false" ]] && TMP_ACCESS_SUPPORT=false
         [[ "$key" =~ matt_pocock_skills_support ]] && [[ "$value" == "true" ]] && MATT_POCOCK_SKILLS_SUPPORT=true
     done < "$CONFIG_FILE"
 
@@ -498,6 +508,10 @@ save_config() {
         echo "# Enabled by default; set to false to skip skill registration and graph builds."
         echo "# See: https://pypi.org/project/graphifyy/"
         echo "setting.graphify_support=$GRAPHIFY_SUPPORT"
+        echo ""
+        echo "# Approval-free /tmp access inside the container"
+        echo "# Enabled by default; set to false to have OpenCode ask before tools touch /tmp."
+        echo "setting.tmp_access_support=$TMP_ACCESS_SUPPORT"
         echo ""
         echo "# Matt Pocock's agent skills (grilling, TDD, code review, domain modelling, ...)"
         echo "# Copied to ~/.agents/skills inside the container, where OpenCode finds them"
@@ -1009,6 +1023,38 @@ prompt_graphify_support() {
     fi
 }
 
+# Interactive prompt for approval-free /tmp access
+# TMP_ACCESS_SUPPORT defaults to true, so the question is phrased as an opt-out
+prompt_tmp_access_support() {
+    echo ""
+    config_info "Approval-free /tmp access (OpenCode external_directory permission)"
+
+    if [ "$TMP_ACCESS_SUPPORT" = true ]; then
+        config_success "/tmp access without prompts is currently enabled"
+        read -r -p "Keep /tmp access without prompts enabled? (Y/n): " tmp_access
+        if [[ "$tmp_access" =~ ^[Nn]$ ]]; then
+            TMP_ACCESS_SUPPORT=false
+            config_info "OpenCode will ask before tools touch /tmp"
+        else
+            config_success "/tmp access without prompts remains enabled"
+        fi
+    else
+        echo "OpenCode asks for approval whenever a tool touches a path outside the"
+        echo "project directory, /tmp included. Inside the container /tmp is throwaway"
+        echo "state that dies with the container, so the prompt only costs confirmations."
+        echo ""
+
+        read -r -p "Allow /tmp access without prompts? (Y/n): " tmp_access
+        if [[ "$tmp_access" =~ ^[Nn]$ ]]; then
+            TMP_ACCESS_SUPPORT=false
+            config_info "OpenCode will ask before tools touch /tmp"
+        else
+            TMP_ACCESS_SUPPORT=true
+            config_success "/tmp access without prompts enabled"
+        fi
+    fi
+}
+
 # Interactive prompt for Matt Pocock's agent skills
 # MATT_POCOCK_SKILLS_SUPPORT defaults to false, so the question is phrased as an opt-in
 prompt_matt_pocock_skills_support() {
@@ -1053,6 +1099,7 @@ print_config() {
     echo "  OpenSpec support: $OPENSPEC_SUPPORT"
     echo "  LLM interception: $LLM_INTERCEPTOR_SUPPORT (port $LLM_INTERCEPTOR_PORT, capture_local $LLM_INTERCEPTOR_CAPTURE_LOCAL)"
     echo "  Graphify support: $GRAPHIFY_SUPPORT"
+    echo "  /tmp access without prompts: $TMP_ACCESS_SUPPORT"
     echo "  Matt Pocock skills: $MATT_POCOCK_SKILLS_SUPPORT"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
@@ -1100,6 +1147,7 @@ interactive_config_setup() {
             prompt_openspec_support
             prompt_llm_interceptor_support
             prompt_graphify_support
+            prompt_tmp_access_support
             prompt_matt_pocock_skills_support
             prompt_custom_mounts
             prompt_env_vars
@@ -1113,10 +1161,11 @@ interactive_config_setup() {
                 prompt_openspec_support
                 prompt_llm_interceptor_support
                 prompt_graphify_support
+                prompt_tmp_access_support
                 prompt_matt_pocock_skills_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$TMP_ACCESS_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

@@ -157,6 +157,7 @@ setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.llm_interceptor_capture_local=false
 setting.graphify_support=true
+setting.tmp_access_support=true
 setting.matt_pocock_skills_support=false
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
@@ -164,7 +165,7 @@ env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 
 Boolean settings default to `false` and are only enabled by an exact `=true`. Opt-out
 settings invert that: they default to `true` and are only disabled by an exact `=false`
-(`setting.graphify_support`). Each new setting needs wiring in five places in
+(`setting.graphify_support`, `setting.tmp_access_support`). Each new setting needs wiring in five places in
 `config-lib.sh`: the globals block, `load_config`, `save_config`, `init_config_file`, and
 a `prompt_*` function registered in `interactive_config_setup`. Settings the entrypoint
 acts on also need an `-e` entry in `build_common_docker_args`.
