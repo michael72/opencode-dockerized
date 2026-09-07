@@ -38,8 +38,17 @@
 # Enabled by default. Without it OpenCode asks before any tool touches a path outside
 # the project directory, /tmp included — a confirmation per scratch file, for state that
 # lives and dies inside the container. Set to false to get those prompts back.
+# The forwarded SSH agent socket (usually /tmp/ssh-XXXXXX/agent.NNN) stays excluded.
 #
 # setting.tmp_access_support=true
+
+# Size cap for /tmp, which is mounted as a tmpfs
+# Keeps a runaway write inside the container from filling the host's Docker storage.
+# tmpfs is memory-backed: the cap is not a reservation, but what is written occupies
+# RAM and swap — size it against the host's memory. Accepts e.g. 32g, 8g, 4096m, or
+# "off" to leave /tmp on the container's writable layer.
+#
+# setting.tmp_size=32g
 
 # Matt Pocock's agent skills (grilling, TDD, code review, domain modelling, ...)
 # When enabled, the skills baked into the image are copied to ~/.agents/skills inside

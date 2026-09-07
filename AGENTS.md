@@ -158,6 +158,7 @@ setting.llm_interceptor_port=9090
 setting.llm_interceptor_capture_local=false
 setting.graphify_support=true
 setting.tmp_access_support=true
+setting.tmp_size=32g
 setting.matt_pocock_skills_support=false
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
@@ -199,6 +200,7 @@ acts on also need an `-e` entry in `build_common_docker_args`.
 |-----------|---------------|------|---------|
 | `$PROJECT_DIR` | `$PROJECT_DIR` (with `$HOME` stripped) | rw | Project files |
 | `~/.config/opencode/` | `/home/coder/.config/opencode/` | ro | Config, skills, agents |
+| _(tmpfs)_ | `/tmp` | rw | Scratch space, capped by `setting.tmp_size` |
 | `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | rw | Auth, sessions |
 | `~/.cache/opencode/` | `/home/coder/.cache/opencode/` | rw | Provider cache |
 | `~/.cache/oh-my-opencode/` | `/home/coder/.cache/oh-my-opencode/` | rw | Plugin cache |

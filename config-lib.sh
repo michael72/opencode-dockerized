@@ -77,6 +77,7 @@ LLM_INTERCEPTOR_PORT=9090        # Port the host-side 'lli watch' proxy listens 
 LLM_INTERCEPTOR_CAPTURE_LOCAL=false  # Also proxy loopback, so a local model (llama-server) is captured
 GRAPHIFY_SUPPORT=true            # Boolean flag for the per-project graphify knowledge graph (opt-out)
 TMP_ACCESS_SUPPORT=true          # Boolean flag for approval-free /tmp access inside the container (opt-out)
+TMP_SIZE=32g                     # Size cap for the /tmp tmpfs ("off" leaves /tmp on the container writable layer)
 MATT_POCOCK_SKILLS_SUPPORT=false # Boolean flag for Matt Pocock's agent skills (~/.agents/skills)
 
 # ============================================
@@ -237,6 +238,27 @@ build_common_docker_args() {
     [ -n "$TERM_PROGRAM_VERSION" ] && DOCKER_COMMON_ARGS+=(-e "TERM_PROGRAM_VERSION=$TERM_PROGRAM_VERSION")
     [ -n "$KITTY_WINDOW_ID" ]      && DOCKER_COMMON_ARGS+=(-e "KITTY_WINDOW_ID=$KITTY_WINDOW_ID")
     [ -n "$COLORTERM" ]            && DOCKER_COMMON_ARGS+=(-e "COLORTERM=$COLORTERM")
+
+    # /tmp as a size-capped tmpfs. Without it /tmp lives in the container's
+    # writable layer, so a runaway write inside the container eats the host's
+    # Docker storage; the cap turns that into ENOSPC in the container instead.
+    #
+    # tmpfs is memory-backed: the size is a cap and not a reservation (nothing is
+    # consumed until written), but what IS written occupies RAM and swap — keep
+    # the cap in the region of the host's memory, or set "off" to fall back to
+    # the writable layer.
+    #
+    # "exec" is deliberate: Docker's tmpfs defaults are noexec plus a 64 MB cap,
+    # and build tooling (uv, npm, sbt, JNI) executes binaries it unpacks into
+    # /tmp. mode=1777 is what /tmp needs for the non-root container user.
+    #
+    # Mounts nested below /tmp still work — Docker orders mounts parent-first, so
+    # the tmpfs is in place before a forwarded SSH agent socket (usually
+    # /tmp/ssh-XXXXXX/agent.NNN) or a project directory living in /tmp is bound
+    # into it.
+    if [ "$TMP_SIZE" != "off" ]; then
+        DOCKER_COMMON_ARGS+=(--tmpfs "/tmp:rw,exec,nosuid,nodev,mode=1777,size=$TMP_SIZE")
+    fi
 }
 
 # Build standard volume mount arguments for OpenCode directories
@@ -391,6 +413,12 @@ init_config_file() {
 # in a container /tmp is throwaway state, so the prompt is pure friction.
 # Set to false to get the confirmation prompt for /tmp back.
 # setting.tmp_access_support=true
+#
+# /tmp is mounted as a tmpfs capped at this size, so a runaway write cannot fill the
+# host's Docker storage. tmpfs is memory-backed: the cap is not a reservation, but what
+# is written occupies RAM and swap — size it against the host's memory.
+# Set to "off" to leave /tmp on the container's writable layer.
+# setting.tmp_size=32g
 
 # Matt Pocock's agent skills (grilling, TDD, code review, domain modelling, ...)
 # When enabled, the skills staged in the image are copied to ~/.agents/skills inside
@@ -454,6 +482,7 @@ load_config() {
     LLM_INTERCEPTOR_CAPTURE_LOCAL=false
     GRAPHIFY_SUPPORT=true
     TMP_ACCESS_SUPPORT=true
+    TMP_SIZE=32g
     MATT_POCOCK_SKILLS_SUPPORT=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
@@ -469,6 +498,7 @@ load_config() {
         # Opt-out setting: enabled unless explicitly disabled with =false
         [[ "$key" =~ graphify_support ]] && [[ "$value" == "false" ]] && GRAPHIFY_SUPPORT=false
         [[ "$key" =~ tmp_access_support ]] && [[ "$value" == "false" ]] && TMP_ACCESS_SUPPORT=false
+        [[ "$key" =~ tmp_size ]] && [[ "$value" =~ ^([0-9]+[kmgKMG]?|off)$ ]] && TMP_SIZE="$value"
         [[ "$key" =~ matt_pocock_skills_support ]] && [[ "$value" == "true" ]] && MATT_POCOCK_SKILLS_SUPPORT=true
     done < "$CONFIG_FILE"
 
@@ -512,6 +542,9 @@ save_config() {
         echo "# Approval-free /tmp access inside the container"
         echo "# Enabled by default; set to false to have OpenCode ask before tools touch /tmp."
         echo "setting.tmp_access_support=$TMP_ACCESS_SUPPORT"
+        echo "# /tmp is a tmpfs capped at this size (memory-backed — what is written"
+        echo "# occupies RAM and swap). Set to \"off\" to use the container writable layer."
+        echo "setting.tmp_size=$TMP_SIZE"
         echo ""
         echo "# Matt Pocock's agent skills (grilling, TDD, code review, domain modelling, ...)"
         echo "# Copied to ~/.agents/skills inside the container, where OpenCode finds them"
@@ -1053,6 +1086,22 @@ prompt_tmp_access_support() {
             config_success "/tmp access without prompts enabled"
         fi
     fi
+
+    # The tmpfs is independent of the permission — it caps what /tmp can cost the
+    # host, whether or not OpenCode has to ask before writing there.
+    echo ""
+    echo "/tmp is mounted as a tmpfs capped at this size, so a runaway write cannot"
+    echo "fill the host's Docker storage. It is memory-backed: the cap is not a"
+    echo "reservation, but what gets written occupies RAM and swap. Enter \"off\" to"
+    echo "leave /tmp on the container's writable layer instead."
+    read -r -p "tmpfs size for /tmp [$TMP_SIZE]: " tmp_size
+    if [ -n "$tmp_size" ]; then
+        if [[ "$tmp_size" =~ ^([0-9]+[kmgKMG]?|off)$ ]]; then
+            TMP_SIZE="$tmp_size"
+        else
+            config_warning "Invalid size '$tmp_size' (expected e.g. 32g, 4096m or off) — keeping $TMP_SIZE"
+        fi
+    fi
 }
 
 # Interactive prompt for Matt Pocock's agent skills
@@ -1099,7 +1148,7 @@ print_config() {
     echo "  OpenSpec support: $OPENSPEC_SUPPORT"
     echo "  LLM interception: $LLM_INTERCEPTOR_SUPPORT (port $LLM_INTERCEPTOR_PORT, capture_local $LLM_INTERCEPTOR_CAPTURE_LOCAL)"
     echo "  Graphify support: $GRAPHIFY_SUPPORT"
-    echo "  /tmp access without prompts: $TMP_ACCESS_SUPPORT"
+    echo "  /tmp access without prompts: $TMP_ACCESS_SUPPORT (tmpfs size $TMP_SIZE)"
     echo "  Matt Pocock skills: $MATT_POCOCK_SKILLS_SUPPORT"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
@@ -1165,7 +1214,7 @@ interactive_config_setup() {
                 prompt_matt_pocock_skills_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$TMP_ACCESS_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$TMP_ACCESS_SUPPORT" != true ] || [ "$TMP_SIZE" != "32g" ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

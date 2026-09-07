@@ -240,6 +240,7 @@ TERM=xterm-256color
 | `~/.gradle/gradle.properties` | `/home/coder/.gradle/gradle.properties` | read-only | Gradle config (optional) |
 | `~/.npmrc` | `/home/coder/.npmrc` | read-only | NPM config (optional) |
 | `~/.mcp-auth/` | `/home/coder/.mcp-auth/` | read-only | MCP authentication (optional) |
+| _(tmpfs)_ | `/tmp` | read-write | Scratch space, capped by `setting.tmp_size` (default 32g), discarded with the container |
 
 
 ### Custom Global Configuration (Optional)
@@ -273,6 +274,7 @@ setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.graphify_support=true
 setting.tmp_access_support=true
+setting.tmp_size=32g
 setting.matt_pocock_skills_support=false
 
 # Custom volume mounts (read-only by default)
@@ -512,14 +514,14 @@ to the project's `.gitignore`:
 ### /tmp Access Without Prompts
 
 OpenCode asks for approval (`external_directory`) whenever a tool touches a path outside
-the project directory — only its own temp directory is whitelisted. In a container that
-means a confirmation for every scratch file a build session writes under `/tmp`, for state
-that is thrown away with the container and never reaches the host.
+the project directory — only its own temp directory (`/tmp/opencode`) is whitelisted. In a
+container that means a confirmation for every scratch file a build session writes under
+`/tmp`, for state that is thrown away with the container and never reaches the host.
 
 This is therefore **enabled by default**: the entrypoint exports
 
 ```json
-OPENCODE_PERMISSION={"external_directory":{"/tmp/*":"allow"}}
+OPENCODE_PERMISSION={"external_directory":{"/tmp/*":"allow","/tmp/ssh-*/*":"deny"}}
 ```
 
 which OpenCode merges over the `permission` block of `~/.config/opencode/opencode.json`
@@ -527,6 +529,13 @@ which OpenCode merges over the `permission` block of `~/.config/opencode/opencod
 resource is the containing directory plus `/*` — writing `/tmp/build/out.log` asks for
 `/tmp/build/*` — so the single `/tmp/*` pattern covers `/tmp` and everything below it.
 Nothing else is widened: paths outside the project **and** outside `/tmp` still ask.
+
+The forwarded SSH agent socket is the one thing under `/tmp` that is **not**
+container-local: `setting.ssh_agent_support` bind-mounts `$SSH_AUTH_SOCK` at its host path,
+which on Linux is usually `/tmp/ssh-XXXXXX/agent.NNN`. It is carved back out with a `deny`
+— rules are matched last-to-first, so the narrower pattern wins over the `/tmp/*` allow.
+Agent sockets outside `/tmp` (`/run/user/1000/keyring/ssh`, macOS launchd paths) were never
+covered by the allow and still ask.
 
 **To disable it**, answer "n" when `./setup.sh` asks, or set it manually in
 `~/.config/opencode-dockerized/config`:
@@ -540,6 +549,35 @@ The setting reaches the container as the `TMP_ACCESS_SUPPORT` environment variab
 wins — the entrypoint only sets the variable when it is not already there, so you can hand
 in a broader or narrower rule set of your own. See
 [OpenCode permissions](https://opencode.ai/docs/permissions/).
+
+#### /tmp is a size-capped tmpfs
+
+The permission is about prompts, not about what `/tmp` can cost you. Left on the container's
+writable layer, a runaway write inside the container consumes the host's Docker storage in
+`/var/lib/docker`. `/tmp` is therefore mounted as a tmpfs:
+
+```
+--tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777,size=32g
+```
+
+Hitting the cap gives ENOSPC inside the container instead of a full host disk, and `/tmp`
+disappears with the container. `exec` is deliberate — Docker's tmpfs defaults are `noexec`
+with a 64 MB cap, and build tooling (uv, npm, sbt, JNI) executes binaries it unpacks into
+`/tmp`.
+
+Mounts nested below `/tmp` are unaffected: Docker orders mounts parent-first, so the tmpfs
+is in place before a forwarded SSH agent socket — or a project directory that happens to
+live in `/tmp` — is bound into it.
+
+**tmpfs is memory-backed.** The size is a cap, not a reservation — nothing is consumed
+until something is written — but what *is* written occupies RAM and swap. 32 GB on a
+16 GB machine means a process that really writes 32 GB will swap and then hit the OOM
+killer rather than ENOSPC, so size the cap against the host's memory:
+
+```ini
+setting.tmp_size=32g     # default; also accepts e.g. 8g, 4096m, 512k
+setting.tmp_size=off     # no tmpfs — /tmp stays on the container writable layer
+```
 
 ### Matt Pocock's Agent Skills
 

@@ -370,6 +370,13 @@ fi
 # /tmp/build/out.log asks for "/tmp/build/*" — so the single pattern "/tmp/*"
 # covers /tmp and everything below it.
 #
+# The forwarded SSH agent socket is the one thing under /tmp that is not
+# container-local: setting.ssh_agent_support bind-mounts $SSH_AUTH_SOCK at its
+# host path, which on Linux is usually /tmp/ssh-XXXXXX/agent.NNN. It is carved
+# back out with a "deny" — rules are matched last-to-first, so the narrower
+# pattern below wins over the "/tmp/*" allow above it. (Agent sockets outside
+# /tmp, e.g. /run/user/1000/keyring/ssh, were never covered and still ask.)
+#
 # OPENCODE_PERMISSION is merged over the "permission" block of
 # ~/.config/opencode/opencode.json, which is mounted read-only and can therefore
 # not be extended here. An OPENCODE_PERMISSION passed in from the host (via
@@ -377,7 +384,7 @@ fi
 # See: https://opencode.ai/docs/permissions/
 # ---------------------------------------------------------------------------
 if [ "${TMP_ACCESS_SUPPORT:-true}" = "true" ] && [ -z "${OPENCODE_PERMISSION:-}" ]; then
-    export OPENCODE_PERMISSION='{"external_directory":{"/tmp/*":"allow"}}'
+    export OPENCODE_PERMISSION='{"external_directory":{"/tmp/*":"allow","/tmp/ssh-*/*":"deny"}}'
 fi
 
 # start local plantuml server to use with `pumlcli`
