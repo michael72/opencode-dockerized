@@ -94,7 +94,12 @@ RUN uv python install && \
 
 # graphify is used by the graphify skill
 RUN uv tool install graphifyy
-RUN uv pip install pytest
+
+# pytest for Python testing; marimo for reactive Python notebooks.
+# Both land in the shared venv (${UV_PROJECT_ENVIRONMENT}) so notebooks can import
+# whatever else is installed there. marimo's web UI (default port 2718) is reachable
+# from the host browser because the container runs with --network host.
+RUN uv pip install pytest marimo
 
 # Install ast-grep for AST-aware code search/replace (used by oh-my-opencode)
 # The npm package @ast-grep/cli provides the 'ast-grep' and 'sg' binaries

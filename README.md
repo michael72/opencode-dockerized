@@ -768,6 +768,38 @@ uv python install 3.12          # Install specific Python versions
 
 For more information, see the [uv documentation](https://docs.astral.sh/uv/).
 
+Two packages are pre-installed into that shared environment
+(`/home/coder/.venv`, i.e. `UV_PROJECT_ENVIRONMENT`): `pytest` and
+[marimo](https://marimo.io/).
+
+### Marimo Notebooks
+
+[marimo](https://marimo.io/) is a reactive Python notebook stored as a plain `.py`
+file — which makes notebooks reviewable in Git and editable by OpenCode like any
+other source file.
+
+```bash
+# Inside the container
+marimo edit notebook.py         # Open the editor (http://localhost:2718)
+marimo run notebook.py          # Serve the notebook as a read-only app
+marimo tutorial intro           # Built-in tutorial
+```
+
+The container runs with `--network host`, so the marimo server on port 2718 is
+reachable from a browser on the host without any port mapping. Use
+`marimo edit --port <n>` if 2718 is already taken on the host.
+
+Only marimo's base dependencies are installed — no pandas, polars, altair or
+duckdb. Add whatever a notebook needs into the same environment, e.g.:
+
+```bash
+uv pip install pandas altair    # available to marimo notebooks
+```
+
+Alternatively, run a notebook in its own isolated environment with marimo's
+sandbox mode (`marimo edit --sandbox notebook.py`), which resolves the inline
+script dependencies of the notebook via uv.
+
 ### Adding Additional Tools
 
 Edit `Dockerfile`:
@@ -892,7 +924,7 @@ opencode-dockerized update
 
 1. **Base Image**: Uses Debian Bookworm slim for minimal footprint
 2. **Docker CLI Only**: Installs only Docker CLI (uses host's Docker daemon via socket)
-3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv), Bun, ast-grep, tmux, Git, and essential CLI tools
+3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv, with `pytest` and `marimo` pre-installed), Bun, ast-grep, tmux, Git, and essential CLI tools
 4. **OpenCode & OpenSpec Installation**: Installs latest OpenCode and OpenSpec via npm
 5. **Oh My OpenCode Support**: Pre-configured with tools needed for oh-my-opencode plugin (ast-grep, tmux, bun)
 6. **User Management**: Creates non-root `coder` user with UID/GID matching
