@@ -151,7 +151,7 @@ sudo cp /path/to/opencode-dockerized/completions/zsh.sh /usr/local/share/zsh/sit
 ```
 
 After installation, you'll get:
-- Command completion (`run`, `build`, `update`, `version`, `auth`, `config`, `clean`, `help`)
+- Command completion (`run`, `build`, `update`, `version`, `auth`, `models`, `config`, `clean`, `help`)
 - Subcommand completion for `config` (`show`, `edit`, `path`)
 - Directory completion for the `run` command
 - Helpful descriptions for each command
@@ -164,6 +164,7 @@ After installation, you'll get:
 ```bash
 opencode-dockerized build          # Build Docker image
 opencode-dockerized auth           # Authenticate with LLM provider
+opencode-dockerized models --refresh   # Refresh and list available models
 opencode-dockerized run [DIR]      # Run OpenCode (default: current dir)
 opencode-dockerized update         # Update OpenCode version
 opencode-dockerized version        # Show version

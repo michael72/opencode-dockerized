@@ -9,6 +9,7 @@ _opencode_dockerized() {
     commands=(
         'run:Run OpenCode in Docker (default: current directory)'
         'auth:Run OpenCode authentication (opencode auth login)'
+        'models:List available models (supports --refresh)'
         'build:Build the Docker image'
         'update:Update OpenCode to the latest version'
         'version:Show OpenCode version in the container'
@@ -29,6 +30,9 @@ _opencode_dockerized() {
             case $words[1] in
                 run)
                     _files -/
+                    ;;
+                models)
+                    _values 'option' '--refresh[Refresh the models cache]' '--verbose[Show model metadata]'
                     ;;
                 config)
                     local -a config_cmds

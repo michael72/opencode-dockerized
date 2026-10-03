@@ -133,6 +133,44 @@ run_auth() {
     print_success "Authentication complete! Your credentials are saved in $HOME/.local/share/opencode"
 }
 
+# Function to list available models (passes arguments through, e.g. --refresh)
+run_models() {
+    check_image "$IMAGE_NAME" || exit 1
+
+    ensure_opencode_dirs
+
+    # Parse custom config and build docker arguments
+    parse_config
+    build_mount_args
+    build_env_args
+    build_common_docker_args
+
+    # Config read-only; cache read-write so --refresh can update the models cache
+    local -a models_volume_args=(
+        -v "$HOME/.local/share/opencode:/home/coder/.local/share/opencode"
+        -v "$HOME/.cache/opencode:/home/coder/.cache/opencode"
+        -v "$HOME/.config/opencode:/home/coder/.config/opencode:ro"
+    )
+
+    local -a tty_args=()
+    if [ -t 0 ] && [ -t 1 ]; then
+        tty_args=(-it)
+    fi
+
+    if ! docker run \
+        "${tty_args[@]}" \
+        --name "opencode-models-$$" \
+        "${DOCKER_COMMON_ARGS[@]}" \
+        "${models_volume_args[@]}" \
+        "${DOCKER_MOUNT_ARGS[@]}" \
+        "${DOCKER_ENV_ARGS[@]}" \
+        "$IMAGE_NAME" \
+        opencode models "$@"; then
+        print_error "Listing models failed"
+        exit 1
+    fi
+}
+
 # Function to run OpenCode
 run_opencode() {
     local project_dir="${1:-$(pwd)}"
@@ -279,6 +317,7 @@ Usage: $0 [COMMAND] [OPTIONS]
 Commands:
     run [DIR]           Run OpenCode in Docker (default: current directory)
     auth                Run OpenCode authentication (opencode auth login)
+    models [ARGS]       List available models (e.g. models --refresh to refresh the cache)
     build               Build the Docker image
     update              Update OpenCode to the latest version
     version             Show OpenCode version in the container
@@ -293,6 +332,7 @@ Examples:
     $0 run                          # Run in current directory
     $0 run /path/to/project         # Run in specific directory
     $0 auth                         # Authenticate with your LLM provider
+    $0 models --refresh             # Refresh and list available models
     $0 build                        # Build the Docker image
     $0 update                       # Update OpenCode to latest version
     $0 config show                  # Show current configuration
@@ -354,6 +394,9 @@ main() {
             ;;
         auth)
             run_auth
+            ;;
+        models)
+            run_models "$@"
             ;;
         build)
             build_image
