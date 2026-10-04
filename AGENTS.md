@@ -7,12 +7,11 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 **Key files:**
 - `opencode-dockerized.sh` — Main wrapper (build, run, auth, update, config, clean commands)
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
-- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode + OpenSpec). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` and writes `.opencode/command/*.md` wrappers for the user-invoked ones when `setting.matt_pocock_skills_support` is on
+- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode V2 (`@opencode/cli`))
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
 - `setup.sh` — First-time config directory initialization
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
 - `config.example` — Example user config (INI-style), in `examples/`
-- `config/` — Templates copied into `~/.config/` by `setup.sh`: `openspec/config.json`, and `opencode/prompts/*.md` (slim system prompt replacements for local models — copied but never auto-enabled; the user wires them into `opencode.json` themselves)
 - `.dockerignore` — Excludes non-essential files from Docker build context
 - Completion scripts: `completions/{bash,zsh}.sh`
 
@@ -197,10 +196,17 @@ acts on also need an `-e` entry in `build_common_docker_args`.
 | Host Path | Container Path | Mode | Purpose |
 |-----------|---------------|------|---------|
 | `$PROJECT_DIR` | `$PROJECT_DIR` (with `$HOME` stripped) | rw | Project files |
-| `~/.config/opencode/` | `/home/coder/.config/opencode/` | ro | Config, skills, agents |
-| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | rw | Auth, sessions |
+| `~/.config/opencode/` | `/home/coder/.config/opencode/` | ro | Config, skills, agents (rw during `auth`) |
+| `~/.config/opencode/cli.json` | `/home/coder/.config/opencode/cli.json` | rw | V2 terminal client settings, layered over the ro config mount |
+| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | rw | Auth database, sessions |
+| `~/.local/state/opencode/` | `/home/coder/.local/state/opencode/` | rw | Selected model, prompt history, locks |
 | `~/.cache/opencode/` | `/home/coder/.cache/opencode/` | rw | Provider cache |
 | `~/.cache/oh-my-opencode/` | `/home/coder/.cache/oh-my-opencode/` | rw | Plugin cache |
-| `~/.cache/openspec/` | `/home/coder/.cache/openspec/` | rw | OpenSpec cache (when enabled) |
-| `~/.config/openspec/` | `/home/coder/.config/openspec/` | ro | OpenSpec config (when enabled) |
+| `~/.gradle/` | `/home/coder/.gradle/` | rw | Gradle dependency + wrapper cache |
+| `~/.gradle/gradle.properties` | `/home/coder/.gradle/gradle.properties` | ro | Credentials, layered over the cache mount |
+| `~/.m2/` | `/home/coder/.m2/` | rw | Maven repository |
+| `~/.npm/` | `/home/coder/.npm/` | rw | npm cache for `npx`-based local MCP servers |
+| `~/.bun/install/cache/` | `/home/coder/.bun/install/cache/` | rw | Bun install cache |
+| `~/.claude/` | `/home/coder/.claude/` | ro | Claude Code compat: CLAUDE.md rules, skills/ |
+| `~/.agents/` | `/home/coder/.agents/` | ro | Agent-compatible skills (skills/<name>/SKILL.md) |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | rw | Docker socket |

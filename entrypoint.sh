@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 
 # This script runs as root and handles UID/GID mapping before switching to coder user
 

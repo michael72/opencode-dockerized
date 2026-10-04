@@ -14,6 +14,10 @@
 CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/opencode-dockerized}"
 CONFIG_FILE="${CONFIG_FILE:-$CONFIG_DIR/config}"
 
+# V2 terminal client settings file — owned and rewritten by the client itself,
+# so it needs a writable mount on top of the read-only OpenCode config directory.
+OPENCODE_CLI_CONFIG="$HOME/.config/opencode/cli.json"
+
 # ============================================
 # COLOR DEFINITIONS (with defaults if not set)
 # ============================================
@@ -72,11 +76,6 @@ declare -a VOLUME_ARGS=()        # Array of standard volume mount arguments (pop
 declare -a GIT_WORKTREE_ARGS=()  # Array of docker args for git worktree support (populated by build_git_worktree_args)
 SSH_AGENT_SUPPORT=false          # Boolean flag for SSH agent forwarding support
 OPENSPEC_SUPPORT=false           # Boolean flag for OpenSpec (spec-driven development) support
-LLM_INTERCEPTOR_SUPPORT=false    # Boolean flag for routing LLM traffic through a host-side 'lli watch'
-LLM_INTERCEPTOR_PORT=9090        # Port the host-side 'lli watch' proxy listens on
-LLM_INTERCEPTOR_CAPTURE_LOCAL=false  # Also proxy loopback, so a local model (llama-server) is captured
-GRAPHIFY_SUPPORT=true            # Boolean flag for the per-project graphify knowledge graph (opt-out)
-MATT_POCOCK_SKILLS_SUPPORT=false # Boolean flag for Matt Pocock's agent skills (~/.agents/skills)
 
 # ============================================
 # SHARED HELPERS
@@ -103,7 +102,10 @@ ensure_opencode_dirs() {
     mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
     mkdir -p "$HOME/.cache/oh-my-opencode" 2>/dev/null || true
     mkdir -p "$HOME/.config/opencode" 2>/dev/null || true
-
+    # Created empty so the client can persist its settings through the read-only config mount
+    [ -f "$OPENCODE_CLI_CONFIG" ] || echo '{}' > "$OPENCODE_CLI_CONFIG" 2>/dev/null || true
+    # Bun's default install cache — created up front so the mount is always available
+    mkdir -p "$HOME/.bun/install/cache" 2>/dev/null || true
     # Create OpenSpec directories if OpenSpec support is enabled
     if [ "$OPENSPEC_SUPPORT" = true ]; then
         mkdir -p "$HOME/.cache/openspec" 2>/dev/null || true
@@ -231,20 +233,24 @@ build_common_docker_args() {
     # Required for kitty OSC 99 terminal-mediated desktop notifications, true-color
     # rendering, and other terminal-specific features. All are conditional so they
     # have no effect on non-kitty terminals.
-    [ -n "$TERM_PROGRAM" ]         && DOCKER_COMMON_ARGS+=(-e "TERM_PROGRAM=$TERM_PROGRAM")
-    [ -n "$TERM_PROGRAM_VERSION" ] && DOCKER_COMMON_ARGS+=(-e "TERM_PROGRAM_VERSION=$TERM_PROGRAM_VERSION")
-    [ -n "$KITTY_WINDOW_ID" ]      && DOCKER_COMMON_ARGS+=(-e "KITTY_WINDOW_ID=$KITTY_WINDOW_ID")
-    [ -n "$COLORTERM" ]            && DOCKER_COMMON_ARGS+=(-e "COLORTERM=$COLORTERM")
+    local term_var
+    for term_var in TERM_PROGRAM TERM_PROGRAM_VERSION KITTY_WINDOW_ID COLORTERM; do
+        if [ -n "${!term_var}" ]; then
+            DOCKER_COMMON_ARGS+=(-e "$term_var=${!term_var}")
+        fi
+    done
 }
 
 # Build standard volume mount arguments for OpenCode directories
 # Populates VOLUME_ARGS and CONTAINER_WORKDIR
 # The project is mounted at a path derived from the host path (with $HOME stripped)
 # so that OpenCode stores a unique, meaningful directory per project in its session DB.
-# Usage: build_standard_volume_args "/path/to/project" [include_docker_socket]
+# Pass config_writable=true when OpenCode must write to ~/.config/opencode (e.g. auth login).
+# Usage: build_standard_volume_args "/path/to/project" [include_docker_socket] [config_writable]
 build_standard_volume_args() {
     local project_dir="$1"
     local include_docker_socket="${2:-false}"
+    local config_writable="${3:-false}"
 
     VOLUME_ARGS=()
 
@@ -253,17 +259,28 @@ build_standard_volume_args() {
     CONTAINER_WORKDIR=$(compute_container_path "$project_dir")
 
     # Project directory (read-write) — mounted at the computed path
-    VOLUME_ARGS+=(-v "$project_dir:$CONTAINER_WORKDIR")
+    # Skipped when no project is given (e.g. auth) or when it resolves to $HOME itself
+    if [ -n "$project_dir" ] && [ -n "$CONTAINER_WORKDIR" ]; then
+        VOLUME_ARGS+=(-v "$project_dir:$CONTAINER_WORKDIR")
+        build_git_worktree_args "$project_dir"
+    fi
 
-    # Git worktree support: mount main .git directory if project is a worktree
-    build_git_worktree_args "$project_dir"
-
-    # OpenCode configuration directory (read-only)
+    # OpenCode configuration directory
     # Includes: opencode.json, AGENTS.md, .env, agent/, command/, plugin/, node_modules/, etc.
+    # Read-only by default; writable during auth so OpenCode can persist opencode.json.
     if [ -d "$HOME/.config/opencode" ]; then
-        VOLUME_ARGS+=(-v "$HOME/.config/opencode:/home/coder/.config/opencode:ro")
+        if [ "$config_writable" = true ]; then
+            VOLUME_ARGS+=(-v "$HOME/.config/opencode:/home/coder/.config/opencode")
+        else
+            VOLUME_ARGS+=(-v "$HOME/.config/opencode:/home/coder/.config/opencode:ro")
+        fi
     else
         config_warning "OpenCode config directory not found at $HOME/.config/opencode"
+    fi
+
+    # V2 terminal client settings — re-mounted read-write on top of the config mount
+    if [ "$config_writable" != true ] && [ -f "$OPENCODE_CLI_CONFIG" ]; then
+        VOLUME_ARGS+=(-v "$OPENCODE_CLI_CONFIG:/home/coder/.config/opencode/cli.json")
     fi
 
     # OpenCode data directory (read-write for auth, logs, sessions, storage)
@@ -272,6 +289,11 @@ build_standard_volume_args() {
     else
         config_warning "OpenCode data directory not found at $HOME/.local/share/opencode"
         config_info "You'll need to run 'opencode auth login' inside the container"
+    fi
+
+    # OpenCode state directory (read-write for selected model, prompt history, locks)
+    if [ -d "$HOME/.local/state/opencode" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.local/state/opencode:/home/coder/.local/state/opencode")
     fi
 
     # OpenCode provider package cache (improves startup time and prevents API errors)
@@ -316,9 +338,28 @@ build_standard_volume_args() {
         VOLUME_ARGS+=(-v "$HOME/.mcp-auth:/home/coder/.mcp-auth:ro")
     fi
 
-    # Gradle properties (optional)
+    # Gradle home (optional) — shares the dependency and wrapper cache with the host
+    # gradle.properties is re-mounted read-only on top so credentials cannot be rewritten
+    if [ -d "$HOME/.gradle" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.gradle:/home/coder/.gradle")
+    fi
     if [ -f "$HOME/.gradle/gradle.properties" ]; then
         VOLUME_ARGS+=(-v "$HOME/.gradle/gradle.properties:/home/coder/.gradle/gradle.properties:ro")
+    fi
+
+    # Maven repository (optional) — avoids re-downloading artifacts on every run
+    if [ -d "$HOME/.m2" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.m2:/home/coder/.m2")
+    fi
+
+    # npm cache (optional) — speeds up npx-based local MCP servers and plugin installs
+    if [ -d "$HOME/.npm" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.npm:/home/coder/.npm")
+    fi
+
+    # Bun install cache (optional)
+    if [ -d "$HOME/.bun/install/cache" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.bun/install/cache:/home/coder/.bun/install/cache")
     fi
 
     # Git configuration (optional) — ensures commits use the host user's name and email
@@ -329,6 +370,18 @@ build_standard_volume_args() {
     # NPM configuration (optional)
     if [ -f "$HOME/.npmrc" ]; then
         VOLUME_ARGS+=(-v "$HOME/.npmrc:/home/coder/.npmrc:ro")
+    fi
+
+    # Claude Code compatibility directory (optional)
+    # Provides fallback CLAUDE.md rules and ~/.claude/skills/ when no opencode equivalents exist
+    if [ -d "$HOME/.claude" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.claude:/home/coder/.claude:ro")
+    fi
+
+    # Agent-compatible skills directory (optional)
+    # OpenCode reads skills from ~/.agents/skills/<name>/SKILL.md
+    if [ -d "$HOME/.agents" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.agents:/home/coder/.agents:ro")
     fi
 
     # Docker socket (optional, for Docker-in-Docker operations)

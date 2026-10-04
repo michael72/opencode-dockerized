@@ -10,6 +10,36 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 IMAGE_NAME="opencode-dockerized:latest"
 
+# Seconds to wait for the in-container OpenCode server to become ready
+PRIVATE_SERVER_TIMEOUT=120
+
+# Runs an opencode command against a private server inside the container.
+# V2's --standalone queries before providers finish loading (empty 'models')
+# and gives up when a large session database slows startup ('stats'),
+# so readiness is awaited explicitly before the command runs.
+# Args: <ready_path> <ready_pattern> <timeout_seconds> <opencode_args...>
+# shellcheck disable=SC2016 # expanded inside the container, not here
+PRIVATE_SERVER_SCRIPT='
+ready_path="$1"; ready_pattern="$2"; timeout="$3"; shift 3
+OPENCODE_SERVER_PASSWORD=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d " \n")
+export OPENCODE_SERVER_PASSWORD
+log=$(mktemp)
+opencode serve --hostname 127.0.0.1 --port 0 >"$log" 2>&1 &
+server_pid=$!
+trap "kill $server_pid 2>/dev/null" EXIT
+for _ in $(seq "$timeout"); do
+    url=$(grep -oE "http://127\.0\.0\.1:[0-9]+" "$log" | head -n 1)
+    if [ -n "$url" ] && curl -sf -u "opencode:$OPENCODE_SERVER_PASSWORD" "$url$ready_path" | grep -q "$ready_pattern"; then
+        opencode "$@" --server "$url"
+        exit
+    fi
+    sleep 1
+done
+echo "OpenCode server was not ready after ${timeout}s" >&2
+cat "$log" >&2
+exit 1
+'
+
 # Colors for output (defined before sourcing config-lib so it picks them up)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -94,38 +124,68 @@ check_config() {
     ensure_opencode_dirs
 }
 
-# Function to run OpenCode authentication
-run_auth() {
+# Run a one-off OpenCode CLI command inside the container.
+# The project directory is mounted so project-level configuration applies.
+# Usage: run_cli_command <name_suffix> <project_dir> <config_writable> <docker_socket> <opencode_args...>
+run_cli_command() {
+    local name_suffix="$1"
+    local project_dir="$2"
+    local config_writable="$3"
+    local docker_socket="$4"
+    shift 4
+
+    if [ -n "$project_dir" ]; then
+        if [ ! -d "$project_dir" ]; then
+            print_error "Project directory does not exist: $project_dir"
+            exit 1
+        fi
+        project_dir="$(cd "$project_dir" && pwd)"
+    fi
+
     check_image "$IMAGE_NAME" || exit 1
-
-    print_info "Running OpenCode authentication..."
-
-    # Ensure OpenCode directories exist
     ensure_opencode_dirs
 
-    # Parse custom config and build docker arguments
     parse_config
     build_mount_args
     build_env_args
     build_common_docker_args
+    build_standard_volume_args "$project_dir" "$docker_socket" "$config_writable"
 
-    # Build volume mount arguments for auth
-    local -a auth_volume_args=(
-        -v "$HOME/.local/share/opencode:/home/coder/.local/share/opencode"
-        -v "$HOME/.cache/opencode:/home/coder/.cache/opencode"
-        # Config directory read-write for writing opencode.json during auth
-        -v "$HOME/.config/opencode:/home/coder/.config/opencode"
+    # Allocate a TTY only when attached to one, so the command stays pipeable
+    local -a tty_args=(-i)
+    [ -t 0 ] && [ -t 1 ] && tty_args=(-it)
+
+    local -a workdir_args=()
+    [ -n "$CONTAINER_WORKDIR" ] && workdir_args=(--workdir "$CONTAINER_WORKDIR")
+
+    local -a docker_cmd=(
+        docker run "${tty_args[@]}"
+        --name "opencode-${name_suffix}-$$"
+        "${workdir_args[@]}"
+        "${DOCKER_COMMON_ARGS[@]}"
+        "${VOLUME_ARGS[@]}"
+        "${GIT_WORKTREE_ARGS[@]}"
+        "${DOCKER_MOUNT_ARGS[@]}"
+        "${DOCKER_ENV_ARGS[@]}"
+        "$IMAGE_NAME"
+        "$@"
     )
 
-    # Run OpenCode auth login in Docker
-    if ! docker run -it \
-        --name "opencode-auth-$$" \
-        "${DOCKER_COMMON_ARGS[@]}" \
-        "${auth_volume_args[@]}" \
-        "${DOCKER_MOUNT_ARGS[@]}" \
-        "${DOCKER_ENV_ARGS[@]}" \
-        "$IMAGE_NAME" \
-        opencode auth login; then
+    if [ "${DRY_RUN:-false}" = true ]; then
+        print_info "Dry run — would execute:"
+        echo "${docker_cmd[*]}"
+        return 0
+    fi
+
+    "${docker_cmd[@]}"
+}
+
+# Function to run OpenCode authentication
+run_auth() {
+    print_info "Running OpenCode authentication..."
+
+    # Config directory is writable so auth can persist opencode.json
+    if ! run_cli_command auth "" true false opencode auth login --standalone; then
         print_error "Authentication failed"
         exit 1
     fi
@@ -183,7 +243,7 @@ run_opencode() {
         "${DOCKER_MOUNT_ARGS[@]}"
         "${DOCKER_ENV_ARGS[@]}"
         "$IMAGE_NAME"
-        opencode
+        opencode --standalone
     )
 
     if [ "$dry_run" = true ]; then
@@ -224,6 +284,68 @@ update_opencode() {
     docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g @fission-ai/openspec --depth=0" 2>/dev/null || true
 
     print_success "OpenCode updated successfully"
+}
+
+# Run an opencode command against a private server once <ready_path> matches <ready_pattern>
+# Usage: run_with_private_server <name_suffix> <project_dir> <ready_path> <ready_pattern> <opencode_args...>
+run_with_private_server() {
+    local name_suffix="$1"
+    local project_dir="$2"
+    local ready_path="$3"
+    local ready_pattern="$4"
+    shift 4
+    run_cli_command "$name_suffix" "$project_dir" false false \
+        bash -c "$PRIVATE_SERVER_SCRIPT" private-server \
+        "$ready_path" "$ready_pattern" "$PRIVATE_SERVER_TIMEOUT" "$@"
+}
+
+# Function to list the models available to the configured providers
+list_models() {
+    run_with_private_server models "${1:-$(pwd)}" /api/model '"id"' models
+}
+
+# Function to show usage statistics
+show_stats() {
+    run_with_private_server stats "$(pwd)" /health . stats "$@"
+}
+
+# Function to manage MCP servers (list, add, auth, logout)
+manage_mcp() {
+    local subcommand="${1:-list}"
+    shift || true
+    # 'add' persists to the global config, so the config mount must be writable
+    local config_writable=false
+    [ "$subcommand" = "add" ] && config_writable=true
+    run_cli_command mcp "$(pwd)" "$config_writable" false opencode mcp "$subcommand" "$@"
+}
+
+# Function to manage plugins (list, add, check, update, remove)
+manage_plugins() {
+    local subcommand="${1:-list}"
+    shift || true
+    # add/update/remove persist to the global config, so it must be writable
+    local config_writable=false
+    case "$subcommand" in
+        add|update|remove) config_writable=true ;;
+    esac
+    run_cli_command plugin "$(pwd)" "$config_writable" false opencode plugin "$subcommand" "$@"
+}
+
+# Function to run OpenCode debugging tools (agents, config, paths)
+run_debug() {
+    local subcommand="${1:-paths}"
+    shift || true
+    run_cli_command debug "$(pwd)" false false opencode debug "$subcommand" "$@"
+}
+
+# Function to run a non-interactive prompt and print the result
+exec_prompt() {
+    if [ $# -eq 0 ]; then
+        print_error "A message is required: $0 exec \"<message>\" [OPTIONS]"
+        exit 1
+    fi
+    # Docker socket is mounted because the agent executes tools here, as in 'run'
+    run_cli_command exec "$(pwd)" false true opencode run --standalone "$@"
 }
 
 # Function to clean up Docker image
@@ -279,6 +401,12 @@ Usage: $0 [COMMAND] [OPTIONS]
 Commands:
     run [DIR]           Run OpenCode in Docker (default: current directory)
     auth                Run OpenCode authentication (opencode auth login)
+    models [DIR]        List models available to the configured providers
+    exec MSG [OPTS]     Run a non-interactive prompt (opencode run)
+    mcp [ARGS]          Manage MCP servers (list|add|auth|logout, default: list)
+    plugin [ARGS]       Manage plugins (list|add|check|update|remove, default: list)
+    stats [OPTS]        Show usage statistics
+    debug [ARGS]        Debugging tools (paths|config|agents, default: paths)
     build               Build the Docker image
     update              Update OpenCode to the latest version
     version             Show OpenCode version in the container
@@ -293,6 +421,12 @@ Examples:
     $0 run                          # Run in current directory
     $0 run /path/to/project         # Run in specific directory
     $0 auth                         # Authenticate with your LLM provider
+    $0 models                       # List available models
+    $0 exec "Explain this repo"     # Non-interactive prompt
+    $0 mcp list                     # Show MCP servers and their status
+    $0 plugin list                  # Show loaded plugins
+    $0 stats --days 7               # Usage for the last 7 days
+    $0 debug config                 # Show configuration sources
     $0 build                        # Build the Docker image
     $0 update                       # Update OpenCode to latest version
     $0 config show                  # Show current configuration
@@ -354,6 +488,24 @@ main() {
             ;;
         auth)
             run_auth
+            ;;
+        models)
+            list_models "$@"
+            ;;
+        exec)
+            exec_prompt "$@"
+            ;;
+        mcp)
+            manage_mcp "$@"
+            ;;
+        plugin)
+            manage_plugins "$@"
+            ;;
+        stats)
+            show_stats "$@"
+            ;;
+        debug)
+            run_debug "$@"
             ;;
         build)
             build_image

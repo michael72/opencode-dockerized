@@ -9,6 +9,12 @@ _opencode_dockerized() {
     commands=(
         'run:Run OpenCode in Docker (default: current directory)'
         'auth:Run OpenCode authentication (opencode auth login)'
+        'models:List models available to the configured providers'
+        'exec:Run a non-interactive prompt (opencode run)'
+        'mcp:Manage MCP servers'
+        'plugin:Manage plugins'
+        'stats:Show usage statistics'
+        'debug:Debugging and troubleshooting tools'
         'build:Build the Docker image'
         'update:Update OpenCode to the latest version'
         'version:Show OpenCode version in the container'
@@ -27,8 +33,30 @@ _opencode_dockerized() {
             ;;
         args)
             case $words[1] in
-                run)
+                run|models)
                     _files -/
+                    ;;
+                mcp)
+                    _values 'mcp subcommand' list add auth logout
+                    ;;
+                plugin)
+                    _values 'plugin subcommand' list add check update remove
+                    ;;
+                debug)
+                    _values 'debug subcommand' paths config agents
+                    ;;
+                stats)
+                    _arguments \
+                        '--days[Show the last N days; 0 means today]:days:' \
+                        '--year[Show a calendar year]:year:' \
+                        '--all[Show lifetime statistics]' \
+                        '--project[Filter by project ID, or "." for the current project]:project:' \
+                        '--models[Show model usage]' \
+                        '--tools[Show tool reliability]' \
+                        '--cost[Show cost and token details]' \
+                        '--full[Show every detailed section]' \
+                        '--limit[Number of rows in detailed sections]:limit:' \
+                        '--json[Output statistics as JSON]'
                     ;;
                 config)
                     local -a config_cmds

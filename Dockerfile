@@ -4,9 +4,10 @@ FROM debian:bookworm-slim
 
 # Parameterize tool versions for easier updates
 ARG NVM_VERSION=v0.40.1
-ENV JAVA_VERSION=21.0.11-tem \
-    JAVA_HOME=/opt/java/openjdk \
-    PATH="/opt/java/openjdk/bin:$PATH"
+ARG JAVA_11_VERSION=11.0.25-tem
+ARG JAVA_17_VERSION=17.0.13-tem
+ARG JAVA_21_VERSION=21.0.5-tem
+ARG JAVA_25_VERSION=25.0.3-tem
 
 # Install base dependencies and useful CLI tools for coding agents
 RUN apt-get update && apt-get install -y \
@@ -64,13 +65,13 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 RUN useradd -m -s /bin/bash -u 1000 coder && \
     echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install SDKMAN and Java as coder user
+# Install SDKMAN and Java LTS versions (11, 17, 21) as coder user; default is 21
 USER coder
 WORKDIR /home/coder
 RUN curl -s "https://get.sdkman.io" | bash && \
     bash -c "source /home/coder/.sdkman/bin/sdkman-init.sh && \
-    sdk install java ${JAVA_VERSION} && \
-    sdk default java ${JAVA_VERSION} && \
+    sdk install java ${JAVA_21_VERSION} && \
+    sdk default java ${JAVA_21_VERSION} && \
     sdk install sbt && \
     sdk install scala 2.13.18"
 
@@ -109,7 +110,7 @@ ENV BUN_INSTALL="/home/coder/.bun"
 
 # Add nvm, node, sdkman, uv, bun, and ast-grep to PATH
 # Node.js is available via the NVM default symlink created above
-ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.sdkman/candidates/java/current/bin:$PATH"
+ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:$PATH"
 ENV JAVA_HOME="/home/coder/.sdkman/candidates/java/current"
 
 # install pumlsrv-server + pumlcli for plantuml diagram handling
@@ -117,12 +118,11 @@ ENV PUMLSRV_PORT=8380
 # install pumlsrv
 RUN curl -sSL https://raw.githubusercontent.com/michael72/pumlsrv/master/get.sh | bash
 
-# Install OpenCode and OpenSpec globally
-# OpenSpec: Spec-driven development (SDD) for AI coding assistants
-# See: https://github.com/Fission-AI/OpenSpec/
+# Install OpenCode V2 globally
+# The package postinstall selects the native binary for the platform
 # ARG OPENCODE_BUILD_TIME is only passed during 'update' to bust cache
 ARG OPENCODE_BUILD_TIME=0
-RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g opencode-ai@latest @fission-ai/openspec@latest"
+RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g @opencode/cli@latest"
 
 # Switch back to root for entrypoint setup
 USER root
@@ -148,6 +148,7 @@ RUN mkdir -p "$MATT_POCOCK_SKILLS_DIR" && \
 RUN mkdir -p /home/coder/.config/opencode && \
     mkdir -p /home/coder/.config/openspec && \
     mkdir -p /home/coder/.local/share/opencode && \
+    mkdir -p /home/coder/.local/state/opencode && \
     mkdir -p /home/coder/.cache/opencode && \
     mkdir -p /home/coder/.cache/oh-my-opencode && \
     mkdir -p /home/coder/.cache/openspec && \
