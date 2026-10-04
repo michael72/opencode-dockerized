@@ -291,7 +291,6 @@ Configuration is stored in `~/.config/opencode-dockerized/config` (INI format):
 # Settings (built-in features)
 # Format: setting.<name>=<value>
 setting.ssh_agent_support=true
-setting.openspec_support=true
 setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.graphify_support=true
@@ -430,51 +429,6 @@ The container includes full support for [Oh My OpenCode](https://github.com/code
 - ✅ All built-in skills and commands
 
 For more information, see the [Oh My OpenCode documentation](https://github.com/code-yeongyu/oh-my-opencode).
-
-### OpenSpec Support
-
-The container includes [OpenSpec](https://github.com/Fission-AI/OpenSpec/), a spec-driven development (SDD) framework for AI coding assistants. OpenSpec helps you agree on what to build before any code is written.
-
-**To enable OpenSpec:**
-
-1. During setup, answer "y" when prompted for OpenSpec support:
-   ```bash
-   ./setup.sh
-   # ... when prompted:
-   # Enable OpenSpec support? (y/N): y
-   ```
-
-2. Or manually set in `~/.config/opencode-dockerized/config`:
-   ```ini
-   setting.openspec_support=true
-   ```
-
-**To use OpenSpec inside the container:**
-
-```bash
-# Initialize OpenSpec in your project (first time)
-openspec init
-
-# Start a new spec-driven change
-/opsx:new add-dark-mode
-
-# Fast-forward through planning artifacts
-/opsx:ff
-
-# Implement the planned tasks
-/opsx:apply
-
-# Archive completed change
-/opsx:archive
-```
-
-**Features:**
-- Spec-driven workflows with `/opsx:*` slash commands
-- Supports 20+ AI coding assistants (including OpenCode)
-- Lightweight spec layer for predictable AI coding
-- Works within the mounted project directory
-
-For more information, see the [OpenSpec documentation](https://github.com/Fission-AI/OpenSpec/).
 
 ### Graphify Support
 
@@ -878,7 +832,7 @@ opencode-dockerized update
 
 ### Core Files
 
-- **`Dockerfile`** - Container image definition (Debian + Node.js/NVM + Java/SDKMAN + Bun + OpenCode + OpenSpec)
+- **`Dockerfile`** - Container image definition (Debian + Node.js/NVM + Java/SDKMAN + Bun + OpenCode)
 - **`entrypoint.sh`** - UID/GID mapping for file permissions
 
 ### User Scripts
@@ -903,7 +857,6 @@ opencode-dockerized update
 
 ### Templates (`config/`)
 
-- **`config/openspec/config.json`** - OpenSpec config template (copied to `~/.config/openspec/`)
 - **`config/opencode/prompts/`** - Slim system prompt replacements (copied to `~/.config/opencode/prompts/`, opt-in)
 - **`config/opencode/plugin/`** - Plugins, e.g. `slim-tools.js` for condensed tool descriptions (copied to `~/.config/opencode/plugin/`, opt-in)
 
@@ -916,7 +869,7 @@ opencode-dockerized update
 1. **Base Image**: Uses Debian Bookworm slim for minimal footprint
 2. **Docker CLI Only**: Installs only Docker CLI (uses host's Docker daemon via socket)
 3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv), Bun, ast-grep, tmux, Git, and essential CLI tools
-4. **OpenCode & OpenSpec Installation**: Installs latest OpenCode and OpenSpec via npm
+4. **OpenCode Installation**: Installs latest OpenCode V2 (`@opencode/cli`) via npm
 5. **Oh My OpenCode Support**: Pre-configured with tools needed for oh-my-opencode plugin (ast-grep, tmux, bun)
 6. **User Management**: Creates non-root `coder` user with UID/GID matching
 7. **Entrypoint**: Adjusts permissions and switches to non-root user
@@ -1013,7 +966,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 This project uses and packages the following third-party software:
 
 - **[OpenCode](https://github.com/sst/opencode)** - Apache 2.0 License (packaged in container)
-- **[OpenSpec](https://github.com/Fission-AI/OpenSpec/)** - MIT License (packaged in container)
 - **[Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode)** - MIT License (optional plugin support)
 - **Docker CLI** - Apache 2.0 License (packaged in container)
 - **Node.js** - MIT License (packaged in container)

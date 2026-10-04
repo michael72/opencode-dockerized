@@ -2,16 +2,17 @@
 
 ## Project Overview
 
-Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in secure, isolated containers. Sandboxes OpenCode so its blast radius is limited to the mounted project directory. Supports [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode) plugin and [OpenSpec](https://github.com/Fission-AI/OpenSpec/) spec-driven development. All source is Bash shell scripts and a Dockerfile — no compiled code, no JS/Python source, no package manager files.
+Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in secure, isolated containers. Sandboxes OpenCode so its blast radius is limited to the mounted project directory. Supports the [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode) plugin. All source is Bash shell scripts and a Dockerfile — no compiled code, no JS/Python source, no package manager files.
 
 **Key files:**
-- `opencode-dockerized.sh` — Main wrapper (build, run, auth, update, config, clean commands)
+- `opencode-dockerized.sh` — Main wrapper (build, run, auth, models, exec, mcp, plugin, stats, debug, update, config, clean commands)
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
-- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode V2 (`@opencode/cli`))
+- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode V2 (`@opencode/cli`)). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` and writes `.opencode/command/*.md` wrappers for the user-invoked ones when `setting.matt_pocock_skills_support` is on
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
 - `setup.sh` — First-time config directory initialization
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
 - `config.example` — Example user config (INI-style), in `examples/`
+- `config/` — Templates copied into `~/.config/` by `setup.sh`: `opencode/prompts/*.md` (slim system prompt replacements for local models — copied but never auto-enabled; the user wires them into `opencode.json` themselves)
 - `.dockerignore` — Excludes non-essential files from Docker build context
 - Completion scripts: `completions/{bash,zsh}.sh`
 
@@ -22,6 +23,12 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 ./opencode-dockerized.sh build          # Build Docker image (uses layer cache)
 ./opencode-dockerized.sh run [DIR]      # Run OpenCode (default: current dir)
 ./opencode-dockerized.sh auth           # Authenticate OpenCode
+./opencode-dockerized.sh models [DIR]   # List models available to configured providers
+./opencode-dockerized.sh exec MSG       # Non-interactive prompt (opencode run)
+./opencode-dockerized.sh mcp [ARGS]     # Manage MCP servers (default: list)
+./opencode-dockerized.sh plugin [ARGS]  # Manage plugins (default: list)
+./opencode-dockerized.sh stats [OPTS]   # Usage statistics
+./opencode-dockerized.sh debug [ARGS]   # Debug tools (default: paths)
 ./opencode-dockerized.sh update         # Update OpenCode (cache-busting rebuild)
 ./opencode-dockerized.sh version        # Show OpenCode version
 ./opencode-dockerized.sh config show    # Show parsed configuration
@@ -74,7 +81,7 @@ source "$SCRIPT_DIR/config-lib.sh"
 | Constants         | UPPER_SNAKE        | `IMAGE_NAME`, `SCRIPT_DIR`, `CONFIG_DIR`      |
 | Local variables   | lower_snake        | `project_dir`, `container_name`               |
 | Global arrays     | UPPER_SNAKE        | `CUSTOM_MOUNTS=()`, `DOCKER_MOUNT_ARGS=()`   |
-| Booleans          | UPPER_SNAKE=false  | `SSH_AGENT_SUPPORT=false`, `OPENSPEC_SUPPORT=false`, `GRAPHIFY_SUPPORT=true` |
+| Booleans          | UPPER_SNAKE=false  | `SSH_AGENT_SUPPORT=false`, `GRAPHIFY_SUPPORT=true` |
 | Docker images     | kebab-case:tag     | `opencode-dockerized:latest`                  |
 | Container names   | kebab-case-suffix  | `opencode-myproject-abc123`                   |
 
@@ -151,7 +158,6 @@ main "$@"
 INI-style (`key.name=value`), parsed with `while IFS='=' read -r key value` loops:
 ```ini
 setting.ssh_agent_support=true
-setting.openspec_support=true
 setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.llm_interceptor_capture_local=false
