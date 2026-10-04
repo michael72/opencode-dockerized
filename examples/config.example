@@ -27,13 +27,6 @@
 #
 # setting.ssh_agent_support=true
 
-# OpenSpec Support (spec-driven development for AI coding assistants)
-# When enabled, OpenSpec is available inside the container for spec-driven workflows.
-# Run 'openspec init' in your project to get started.
-# See: https://github.com/Fission-AI/OpenSpec/
-#
-# setting.openspec_support=true
-
 # Matt Pocock's agent skills (grilling, TDD, code review, domain modelling, ...)
 # When enabled, the skills baked into the image are copied to ~/.agents/skills inside
 # the container on every launch, where OpenCode discovers them for every project.
@@ -72,6 +65,8 @@
 # Common examples:
 #   env.context7=CONTEXT7_API_KEY             # Context7 API key
 #   env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK  # AWS Bedrock credentials
+#   env.slim_tools=OPENCODE_SLIM_TOOLS        # Condensed tool descriptions
+#                                             # (see config/opencode/plugin/README.md)
 #
 # env.context7=CONTEXT7_API_KEY
 # env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
