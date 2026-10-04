@@ -506,7 +506,9 @@ project-local `.opencode/`, `.claude/` and `.agents/` directories. `~/.config/op
 mounted read-only, so `~/.agents` is the only *global* skill location the container can
 write to — the skills themselves never touch the project, unlike the project-scoped
 registration graphify needs. The container runs with `--rm`, so the copy is fresh on every
-launch and nothing is left behind on the host.
+launch and nothing is left behind on the host. If you have your own `~/.agents/skills/`
+on the host, its skills are mounted read-only one by one next to the copied ones (a host
+skill with the same name as a Matt Pocock skill wins).
 
 OpenCode does register every discovered skill as a command of its own name, so typing a
 skill name in full always works. Its TUI, however, skips skill-sourced entries when it

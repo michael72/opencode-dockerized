@@ -222,13 +222,27 @@ if [ "${MATT_POCOCK_SKILLS_SUPPORT:-false}" = "true" ]; then
         echo "Matt Pocock skills: installing into ~/.agents/skills..."
         mkdir -p /home/coder/.agents/skills
 
-        if ! cp -R "$MATT_POCOCK_SKILLS_STAGE/." /home/coder/.agents/skills/; then
-            echo "Matt Pocock skills: copy failed (non-fatal) — skills will not be available"
+        # Copy skill by skill: a skill of the same name mounted from the host
+        # (read-only, see build_standard_volume_args) wins and is left untouched.
+        mp_copied=0
+        for mp_stage_dir in "$MATT_POCOCK_SKILLS_STAGE"/*/; do
+            if [ ! -d "$mp_stage_dir" ]; then continue; fi
+            mp_stage_dir="${mp_stage_dir%/}"
+            mp_target="/home/coder/.agents/skills/$(basename "$mp_stage_dir")"
+            if [ -e "$mp_target" ]; then continue; fi
+            if cp -R "$mp_stage_dir" "$mp_target"; then
+                chown -R "$TARGET_UID:$TARGET_GID" "$mp_target" 2>/dev/null || true
+                mp_copied=$((mp_copied + 1))
+            fi
+        done
+
+        if [ "$mp_copied" -eq 0 ] && [ -z "$(ls -A "$MATT_POCOCK_SKILLS_STAGE" 2>/dev/null)" ]; then
+            echo "Matt Pocock skills: nothing staged to copy (non-fatal) — rebuild with './opencode-dockerized.sh build'"
         else
             mkdir -p "$MATT_POCOCK_COMMAND_DIR"
             mp_written=0
 
-            for mp_skill in /home/coder/.agents/skills/*/SKILL.md; do
+            for mp_skill in "$MATT_POCOCK_SKILLS_STAGE"/*/SKILL.md; do
                 if [ ! -f "$mp_skill" ]; then continue; fi
 
                 # Upstream's marker for a skill only the human is meant to fire.
@@ -268,7 +282,9 @@ if [ "${MATT_POCOCK_SKILLS_SUPPORT:-false}" = "true" ]; then
             chown -R "$TARGET_UID:$TARGET_GID" "$WORKDIR/.opencode" 2>/dev/null || true
         fi
 
-        chown -R "$TARGET_UID:$TARGET_GID" /home/coder/.agents 2>/dev/null || true
+        # Only the freshly created parent directories need handing over; the
+        # copied skills were chowned above and host mounts must stay untouched.
+        chown "$TARGET_UID:$TARGET_GID" /home/coder/.agents /home/coder/.agents/skills 2>/dev/null || true
     fi
 fi
 

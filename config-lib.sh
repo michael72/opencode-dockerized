@@ -367,8 +367,20 @@ build_standard_volume_args() {
 
     # Agent-compatible skills directory (optional)
     # OpenCode reads skills from ~/.agents/skills/<name>/SKILL.md
+    # With Matt Pocock's skills enabled the entrypoint must add them to ~/.agents/skills,
+    # which a read-only mount of the whole directory would block. The host's skills are
+    # then mounted one by one (read-only) so the parent directory stays writable.
     if [ -d "$HOME/.agents" ]; then
-        VOLUME_ARGS+=(-v "$HOME/.agents:/home/coder/.agents:ro")
+        if [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ]; then
+            local host_skill
+            for host_skill in "$HOME"/.agents/skills/*/; do
+                [ -d "$host_skill" ] || continue
+                host_skill="${host_skill%/}"
+                VOLUME_ARGS+=(-v "$host_skill:/home/coder/.agents/skills/$(basename "$host_skill"):ro")
+            done
+        else
+            VOLUME_ARGS+=(-v "$HOME/.agents:/home/coder/.agents:ro")
+        fi
     fi
 
     # Docker socket (optional, for Docker-in-Docker operations)

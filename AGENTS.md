@@ -214,5 +214,5 @@ acts on also need an `-e` entry in `build_common_docker_args`.
 | `~/.npm/` | `/home/coder/.npm/` | rw | npm cache for `npx`-based local MCP servers |
 | `~/.bun/install/cache/` | `/home/coder/.bun/install/cache/` | rw | Bun install cache |
 | `~/.claude/` | `/home/coder/.claude/` | ro | Claude Code compat: CLAUDE.md rules, skills/ |
-| `~/.agents/` | `/home/coder/.agents/` | ro | Agent-compatible skills (skills/<name>/SKILL.md) |
+| `~/.agents/` | `/home/coder/.agents/` | ro | Agent-compatible skills (skills/<name>/SKILL.md). With `setting.matt_pocock_skills_support` on, each `~/.agents/skills/<name>/` is mounted ro individually instead, so the entrypoint can add the staged skills next to them (a host skill of the same name wins) |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | rw | Docker socket |
