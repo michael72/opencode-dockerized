@@ -106,28 +106,19 @@ else
     print_warning "Prompt templates not found at $SCRIPT_DIR/config/opencode/prompts"
 fi
 
-# Copy plugins (inert until switched on — see config/opencode/plugin/README.md)
-if [ -d "$SCRIPT_DIR/config/opencode/plugin" ]; then
-    plugins_copied=false
-    for plugin_file in "$SCRIPT_DIR"/config/opencode/plugin/*.js; do
-        [ -f "$plugin_file" ] || continue
-        plugin_target="$HOME/.config/opencode/plugin/$(basename "$plugin_file")"
-        if [ ! -f "$plugin_target" ]; then
-            cp "$plugin_file" "$plugin_target"
-            plugins_copied=true
-        fi
-    done
-    if [ -f "$SCRIPT_DIR/config/opencode/plugin/README.md" ] && [ ! -f "$HOME/.config/opencode/plugin/README.md" ]; then
-        cp "$SCRIPT_DIR/config/opencode/plugin/README.md" "$HOME/.config/opencode/plugin/README.md"
+# slim-tools.js was shipped here until OpenCode V2. It used the V1 plugin format,
+# which V2 rejects at startup ("Plugin must export a default definition with an
+# id and an effect or setup function"), and V2's built-in tool descriptions are
+# already smaller than the slim ones, so it is no longer provided. Remove a copy
+# an earlier setup.sh left behind. The signature check leaves a file you wrote
+# yourself alone.
+stale_plugin="$HOME/.config/opencode/plugin/slim-tools.js"
+if [ -f "$stale_plugin" ] && grep -q 'export const SlimTools' "$stale_plugin"; then
+    rm -f "$stale_plugin"
+    echo -e "${GREEN}✓${NC} Removed obsolete ~/.config/opencode/plugin/slim-tools.js (not compatible with OpenCode V2)"
+    if [ -f "$HOME/.config/opencode/plugin/README.md" ] && grep -q 'slim-tools' "$HOME/.config/opencode/plugin/README.md"; then
+        rm -f "$HOME/.config/opencode/plugin/README.md"
     fi
-    if [ "$plugins_copied" = true ]; then
-        echo -e "${GREEN}✓${NC} Copied plugins to ~/.config/opencode/plugin/"
-        echo -e "${YELLOW}  slim-tools is inert until OPENCODE_SLIM_TOOLS=1 — see ~/.config/opencode/plugin/README.md${NC}"
-    else
-        echo -e "${GREEN}✓${NC} Plugins already present in ~/.config/opencode/plugin/"
-    fi
-else
-    print_warning "Plugins not found at $SCRIPT_DIR/config/opencode/plugin"
 fi
 
 interactive_config_setup

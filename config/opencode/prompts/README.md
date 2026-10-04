@@ -88,9 +88,15 @@ export const TrimSystem = async () => ({
 The same hook can strip arbitrary sections out of the stock prompt if you would
 rather trim than replace.
 
-**Tool descriptions** — another ~16 KB sent with every request, and bigger than
-the system prompt itself. See [`../plugin/README.md`](../plugin/README.md) for
-`slim-tools.js`, which rewrites them through the `tool.definition` hook.
+> **OpenCode V2:** this snippet is the V1 plugin format and is rejected by V2 ("Plugin
+> must export a default definition with an id and an effect or setup function"). A V2
+> plugin is `export default { id, setup(ctx) { ... } }` and edits the request through
+> `ctx.session`'s model hooks, whose `system` array is the equivalent. Not rewritten or
+> tested here.
+
+**Tool descriptions** — OpenCode V1 sent ~16 KB of them with every request. V2's built-in
+descriptions are already short (about 4 KB for the standard tools), so there is nothing
+left worth rewriting.
 
 ## Caveats
 

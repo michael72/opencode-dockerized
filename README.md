@@ -506,6 +506,15 @@ produces on its own:
   written once and your edits to it are kept; delete it to get the default back. It has
   to live in the project because `~/.config/opencode` is mounted read-only.
 
+OpenCode V2 plugins must `export default { id, setup }`, but `graphify opencode install`
+still writes the V1 form (`.opencode/plugins/graphify.js` plus a `"plugin"` entry in
+`.opencode/opencode.json`), which V2 reports as "Plugin must export a default definition
+with an id and an effect or setup function". On every launch the entrypoint therefore
+rewrites that file as a V2 plugin (same reminder, hooked on the `shell` tool) and removes the
+now-redundant `"plugin"` entry — V2 discovers `.opencode/plugins/*.js` on its own and would
+otherwise try to install the path as an npm package. A JSONC `opencode.json` is left alone
+with a hint.
+
 All steps are non-fatal: a failure prints a hint and OpenCode starts anyway.
 
 **To disable it** (e.g. for a huge repository where the initial build is slow, or when you
@@ -660,35 +669,6 @@ the environment block can be stripped with an
 
 See [`config/opencode/prompts/README.md`](config/opencode/prompts/README.md)
 for the full details, the plugin snippet, and the caveats.
-
-### Condensing Tool Descriptions
-
-The system prompt is only half the fixed cost. OpenCode's built-in **tool
-descriptions** are another ~16 KB (~4k tokens) of JSON, re-sent in full with
-every message — `bash` alone is 4.6 KB, more than the whole slim build prompt.
-
-`config/opencode/plugin/slim-tools.js`, copied to
-`~/.config/opencode/plugin/` by `setup.sh`, rewrites them through OpenCode's
-`tool.definition` hook: **16.1 KB → 6.2 KB**, about 2.5k tokens back per
-request. The rules that steer behaviour stay (read before edit, `workdir`
-instead of `cd`, use the dedicated tools, don't commit unless asked); the
-restatement, the example pairs and the "Usage notes:" scaffolding go.
-`apply_patch` and `lsp` are left alone, since paraphrasing a format
-specification is how you get patches that don't apply.
-
-It is **inert until switched on**. Add the variable to your config
-(`env.custom1=OPENCODE_SLIM_TOOLS` — via `./setup.sh` or
-`~/.config/opencode-dockerized/config`) and export it on the host:
-
-```bash
-export OPENCODE_SLIM_TOOLS=1
-opencode-dockerized
-```
-
-`OPENCODE_SLIM_TOOLS_SKIP=bash,todowrite` keeps the built-in text for
-individual tools. See
-[`config/opencode/plugin/README.md`](config/opencode/plugin/README.md) for the
-per-tool sizes, how to verify what is actually sent, and the caveats.
 
 ### LLM Traffic Interception (llm-interceptor)
 
@@ -905,7 +885,6 @@ opencode-dockerized update
 
 - **`config/openspec/config.json`** - OpenSpec config template (copied to `~/.config/openspec/`)
 - **`config/opencode/prompts/`** - Slim system prompt replacements (copied to `~/.config/opencode/prompts/`, opt-in)
-- **`config/opencode/plugin/`** - Plugins, e.g. `slim-tools.js` for condensed tool descriptions (copied to `~/.config/opencode/plugin/`, opt-in)
 
 ### Configuration
 - **`.gitignore`** - Excludes sensitive files from Git
