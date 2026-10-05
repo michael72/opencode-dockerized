@@ -749,6 +749,13 @@ The trade-off is that `pumlsrv` is then routed through the proxy as well, so it 
 running. Alternatively leave this off and point OpenCode at the host's LAN address instead of
 `127.0.0.1`. Fine-tune with `LLM_INTERCEPTOR_NO_PROXY` if you need something in between.
 
+OpenCode's own client talks to its server over HTTP on loopback too. With loopback proxied, that
+link would go through `lli` and the TUI would show *"Connection lost… Reconnecting to the server
+automatically."* To avoid it, `capture_local=true` makes the wrapper start OpenCode's private server
+on `127.0.0.2` (the rest of `127.0.0.0/8` is loopback as well) and attach with `--server`, while the
+entrypoint always lists `127.0.0.2` in `NO_PROXY`. Your local model on `127.0.0.1`/`localhost` stays
+proxied. Don't point a local model at `127.0.0.2`, or its traffic will bypass the proxy.
+
 **2. `lli` has to decide to record it.** `lli` is not a general traffic recorder — it only writes a
 session when the URL matches its filter, which by default is a regex allowlist of hosted providers:
 

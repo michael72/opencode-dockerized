@@ -337,10 +337,17 @@ if [ "${LLM_INTERCEPTOR_SUPPORT:-false}" = "true" ]; then
     # Routing pumlsrv through the proxy is harmless, but it does mean pumlsrv stops
     # working when 'lli watch' is not running.
     if [ "${LLM_INTERCEPTOR_CAPTURE_LOCAL:-false}" = "true" ]; then
-        export NO_PROXY="${LLM_INTERCEPTOR_NO_PROXY:-}"
+        LLI_NO_PROXY="${LLM_INTERCEPTOR_NO_PROXY:-}"
     else
-        export NO_PROXY="${LLM_INTERCEPTOR_NO_PROXY:-localhost,127.0.0.1,::1}"
+        LLI_NO_PROXY="${LLM_INTERCEPTOR_NO_PROXY:-localhost,127.0.0.1,::1}"
     fi
+
+    # Always exempt the address of OpenCode's own private server. Its random port
+    # on 127.0.0.1 cannot be exempted separately from a local model, and a proxied
+    # client<->server link makes the TUI show "Connection lost... Reconnecting".
+    # opencode-dockerized.sh starts that server on this address instead.
+    LLI_PRIVATE_HOST="${PRIVATE_SERVER_HOST:-127.0.0.2}"
+    export NO_PROXY="${LLI_NO_PROXY:+$LLI_NO_PROXY,}$LLI_PRIVATE_HOST"
     export no_proxy="$NO_PROXY"
 
     echo "llm-interceptor: routing through $HTTP_PROXY (NO_PROXY=${NO_PROXY:-<none>})"

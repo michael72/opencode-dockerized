@@ -209,6 +209,78 @@ build_git_worktree_args() {
     GIT_WORKTREE_ARGS+=(-v "$git_common_dir:$git_common_dir:ro")
 }
 
+# Seconds to wait for the in-container OpenCode server to become ready
+PRIVATE_SERVER_TIMEOUT=120
+
+# Loopback address the private in-container OpenCode server binds to. It is
+# deliberately not 127.0.0.1: with llm_interceptor_capture_local=true loopback is
+# routed through the proxy (so a local model gets captured), and the NO_PROXY
+# match is by host, not port. A server on a random 127.0.0.1 port would then be
+# proxied too, and the TUI reports "Connection lost... Reconnecting to the server".
+# The whole 127.0.0.0/8 block is loopback, so a second address costs nothing, and
+# entrypoint.sh always lists this one in NO_PROXY.
+PRIVATE_SERVER_HOST=127.0.0.2
+
+# Runs an opencode command against a private server inside the container.
+# V2's --standalone queries before providers finish loading (empty 'models')
+# and gives up when a large session database slows startup ('stats'),
+# so readiness is awaited explicitly before the command runs.
+# Args: <host> <ready_path> <ready_pattern> <timeout_seconds> <opencode_args...>
+# shellcheck disable=SC2016 # expanded inside the container, not here
+PRIVATE_SERVER_SCRIPT='
+host="$1"; ready_path="$2"; ready_pattern="$3"; timeout="$4"; shift 4
+OPENCODE_SERVER_PASSWORD=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d " \n")
+export OPENCODE_SERVER_PASSWORD
+log=$(mktemp)
+opencode serve --hostname "$host" --port 0 >"$log" 2>&1 &
+server_pid=$!
+trap "kill $server_pid 2>/dev/null" EXIT
+for _ in $(seq "$timeout"); do
+    url=$(grep -oE "http://${host//./\\.}:[0-9]+" "$log" | head -n 1)
+    if [ -n "$url" ] && curl -sf -u "opencode:$OPENCODE_SERVER_PASSWORD" "$url$ready_path" | grep -q "$ready_pattern"; then
+        opencode "$@" --server "$url"
+        exit
+    fi
+    sleep 1
+done
+echo "OpenCode server was not ready after ${timeout}s" >&2
+cat "$log" >&2
+exit 1
+'
+
+# Command that runs OpenCode with a private in-container server.
+# Takes a full opencode command and populates STANDALONE_CMD with it, e.g.
+#   build_standalone_cmd opencode run --standalone "$@"
+# Commands without --standalone are passed through untouched. While loopback is
+# routed through the LLM interceptor, --standalone would put the client<->server
+# link on a proxied 127.0.0.1 port, so the server is started on
+# PRIVATE_SERVER_HOST instead and the client attached with --server.
+# Needs load_config to have run.
+# shellcheck disable=SC2034  # STANDALONE_CMD is used by callers that source this file
+build_standalone_cmd() {
+    STANDALONE_CMD=("$@")
+    if [ "$LLM_INTERCEPTOR_SUPPORT" != true ] || [ "$LLM_INTERCEPTOR_CAPTURE_LOCAL" != true ]; then
+        return 0
+    fi
+
+    local -a opencode_args=()
+    local arg found=false
+    for arg in "${@:2}"; do  # skip the leading "opencode"
+        if [ "$found" = false ] && [ "$arg" = "--standalone" ]; then
+            found=true
+            continue
+        fi
+        opencode_args+=("$arg")
+    done
+    [ "$found" = true ] || return 0
+
+    STANDALONE_CMD=(
+        bash -c "$PRIVATE_SERVER_SCRIPT" private-server
+        "$PRIVATE_SERVER_HOST" /health . "$PRIVATE_SERVER_TIMEOUT"
+        "${opencode_args[@]}"
+    )
+}
+
 # Build common Docker run arguments shared by run_opencode and run_auth
 # Populates DOCKER_COMMON_ARGS array
 # Usage: build_common_docker_args
@@ -224,6 +296,7 @@ build_common_docker_args() {
         -e "LLM_INTERCEPTOR_SUPPORT=$LLM_INTERCEPTOR_SUPPORT"
         -e "LLM_INTERCEPTOR_PORT=$LLM_INTERCEPTOR_PORT"
         -e "LLM_INTERCEPTOR_CAPTURE_LOCAL=$LLM_INTERCEPTOR_CAPTURE_LOCAL"
+        -e "PRIVATE_SERVER_HOST=$PRIVATE_SERVER_HOST"
         -e "GRAPHIFY_SUPPORT=$GRAPHIFY_SUPPORT"
         -e "MATT_POCOCK_SKILLS_SUPPORT=$MATT_POCOCK_SKILLS_SUPPORT"
     )

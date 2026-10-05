@@ -126,6 +126,7 @@ All volume mount logic lives in `config-lib.sh` to eliminate duplication:
 - `check_image "$IMAGE_NAME"` — validates Docker image exists
 - `sanitize_container_name "$name"` — strips invalid Docker container name characters
 - `generate_random_suffix` — produces random hex for unique container names
+- `build_standalone_cmd opencode ... --standalone ...` — populates `STANDALONE_CMD`. Every command that uses `--standalone` goes through it: while `llm_interceptor_capture_local=true` loopback is proxied, so the private server is started on `$PRIVATE_SERVER_HOST` (`127.0.0.2`, always in the container's `NO_PROXY`) and the client attached with `--server`. Otherwise the command is unchanged
 
 ### Main Entry Point Pattern
 
