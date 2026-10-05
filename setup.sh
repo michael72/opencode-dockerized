@@ -70,8 +70,8 @@ ensure_dir "$HOME/.mcp-auth"
 # Check/create OpenCode config files
 ensure_any_file '{}' "$HOME/.config/opencode/opencode.json" "$HOME/.config/opencode/opencode.jsonc"
 
-# Copy slim system prompt templates (not enabled automatically — see
-# config/opencode/prompts/README.md for how to wire them into opencode.json)
+# Copy the slim title prompt (not enabled automatically — see
+# config/opencode/prompts/README.md for how to wire it into opencode.json)
 ensure_dir "$HOME/.config/opencode/prompts"
 if [ -d "$SCRIPT_DIR/config/opencode/prompts" ]; then
     prompts_copied=false
@@ -84,10 +84,10 @@ if [ -d "$SCRIPT_DIR/config/opencode/prompts" ]; then
         fi
     done
     if [ "$prompts_copied" = true ]; then
-        echo -e "${GREEN}✓${NC} Copied slim system prompts to ~/.config/opencode/prompts/"
+        echo -e "${GREEN}✓${NC} Copied slim title prompt to ~/.config/opencode/prompts/"
         echo -e "${YELLOW}  Not active yet — see ~/.config/opencode/prompts/README.md to enable${NC}"
     else
-        echo -e "${GREEN}✓${NC} Slim system prompts already present in ~/.config/opencode/prompts/"
+        echo -e "${GREEN}✓${NC} Slim title prompt already present in ~/.config/opencode/prompts/"
     fi
 else
     print_warning "Prompt templates not found at $SCRIPT_DIR/config/opencode/prompts"

@@ -574,57 +574,26 @@ and update them with `npx skills@latest update` without a rebuild.
 
 ### Customizing System Prompts
 
-OpenCode ships a large built-in system prompt — roughly 2–3k tokens once the
-environment block, `AGENTS.md`, MCP instructions and the skills list are added.
-The prompt is chosen by substring match on the model ID, so anything that isn't
-`gpt*`, `gemini-*`, `claude*`, `trinity*` or `kimi*` — i.e. every local model —
-gets the generic 8.5 KB `default.txt`. On a 30B model running on your own GPU,
-that preamble is a real slice of the context window.
-
-The prompts are compiled into the OpenCode binary, so there is no file in the
-container to edit. They are replaced through config instead.
-
-This repo ships slimmed-down replacements in `config/opencode/prompts/`, which
-`setup.sh` copies to `~/.config/opencode/prompts/`:
-
-| File | Replaces | Size | Built-in |
-|------|----------|------|----------|
-| `build-slim.md` | build/plan agent prompt | ~3.3 KB | ~8.5 KB |
-| `title-slim.md` | session title agent prompt | ~0.7 KB | ~2.1 KB |
-
-`build-slim.md` is not only a trim: on top of the slimmed built-in rules it adds
-a `# Naming` section (self-explanatory, fully spelled-out identifiers) and an
-`# Above all` section (think first, keep it simple, keep changes surgical).
-Those are opinionated house rules and the last ~1.3 KB of the file — delete the
-two sections if you only want the size win.
-
-They are **not active by default**. To enable them, add to
+OpenCode V2's built-in prompts and tool descriptions are already compact, so a replacement
+build prompt no longer saves anything. The one prompt still worth replacing is the session
+title prompt, which `setup.sh` copies to `~/.config/opencode/prompts/title-slim.md`
+(~0.7 KB instead of ~2.1 KB). It is **not active by default**; enable it in
 `~/.config/opencode/opencode.json`:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "agent": {
-    "build": { "prompt": "{file:./prompts/build-slim.md}" },
-    "plan":  { "prompt": "{file:./prompts/build-slim.md}" },
     "title": { "prompt": "{file:./prompts/title-slim.md}" }
   }
 }
 ```
 
-Since `~/.config/opencode/` is mounted into the container, this takes effect on
-the next `run` — no rebuild needed. `{file:...}` paths resolve relative to
-`opencode.json` itself.
-
-Setting `prompt` **replaces** the built-in prompt rather than adding to it. To
-*add* instructions, use `AGENTS.md` or the `instructions` config field instead.
-
-The skills block can be dropped with `"permission": { "skill": "deny" }`, and
-the environment block can be stripped with an
-`experimental.chat.system.transform` plugin.
-
-See [`config/opencode/prompts/README.md`](config/opencode/prompts/README.md)
-for the full details, the plugin snippet, and the caveats.
+`{file:...}` resolves relative to `opencode.json`, which is mounted into the container, so
+this takes effect on the next `run`. Setting `prompt` **replaces** the built-in prompt; to
+*add* instructions use `AGENTS.md` or the `instructions` config field. See
+[`config/opencode/prompts/README.md`](config/opencode/prompts/README.md) for measured
+sizes and how to check what is actually sent.
 
 ### LLM Traffic Interception (llm-interceptor)
 
@@ -839,7 +808,7 @@ opencode-dockerized update
 
 ### Templates (`config/`)
 
-- **`config/opencode/prompts/`** - Slim system prompt replacements (copied to `~/.config/opencode/prompts/`, opt-in)
+- **`config/opencode/prompts/`** - Slim session-title prompt (copied to `~/.config/opencode/prompts/`, opt-in)
 
 ### Configuration
 - **`.gitignore`** - Excludes sensitive files from Git
