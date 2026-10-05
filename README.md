@@ -151,7 +151,7 @@ sudo cp /path/to/opencode-dockerized/completions/zsh.sh /usr/local/share/zsh/sit
 ```
 
 After installation, you'll get:
-- Command completion (`run`, `build`, `update`, `version`, `auth`, `models`, `config`, `clean`, `help`)
+- Command completion (`run`, `build`, `update`, `version`, `auth`, `models`, `exec`, `mcp`, `plugin`, `stats`, `debug`, `config`, `clean`, `help`)
 - Subcommand completion for `config` (`show`, `edit`, `path`)
 - Directory completion for the `run` command
 - Helpful descriptions for each command
@@ -164,8 +164,13 @@ After installation, you'll get:
 ```bash
 opencode-dockerized build          # Build Docker image
 opencode-dockerized auth           # Authenticate with LLM provider
-opencode-dockerized models --refresh   # Refresh and list available models
 opencode-dockerized run [DIR]      # Run OpenCode (default: current dir)
+opencode-dockerized models         # List available models
+opencode-dockerized exec "..."     # Non-interactive prompt
+opencode-dockerized mcp list       # MCP servers and their status
+opencode-dockerized plugin list    # Loaded plugins
+opencode-dockerized stats --days 7 # Usage statistics
+opencode-dockerized debug paths    # Resolved data/config/cache paths
 opencode-dockerized update         # Update OpenCode version
 opencode-dockerized version        # Show version
 opencode-dockerized config show    # Show parsed configuration
@@ -235,13 +240,30 @@ TERM=xterm-256color
 |-----------|---------------|------|---------|
 | `$PROJECT_DIR` | `$PROJECT_DIR` (with `$HOME` stripped) | read-write | Your project files |
 | `~/.config/opencode/` | `/home/coder/.config/opencode/` | read-only | OpenCode & oh-my-opencode config, skills, commands, agents |
-| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | read-write | Auth, logs, sessions, storage |
+| `~/.config/opencode/cli.json` | `/home/coder/.config/opencode/cli.json` | read-write | OpenCode V2 terminal client settings |
+| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | read-write | Auth database, logs, sessions, storage |
+| `~/.local/state/opencode/` | `/home/coder/.local/state/opencode/` | read-write | Selected model, prompt history, locks |
 | `~/.cache/opencode/` | `/home/coder/.cache/opencode/` | read-write | Provider package cache |
 | `~/.cache/oh-my-opencode/` | `/home/coder/.cache/oh-my-opencode/` | read-write | Oh My OpenCode cache |
 | `~/.gradle/gradle.properties` | `/home/coder/.gradle/gradle.properties` | read-only | Gradle config (optional) |
 | `~/.npmrc` | `/home/coder/.npmrc` | read-only | NPM config (optional) |
 | `~/.mcp-auth/` | `/home/coder/.mcp-auth/` | read-only | MCP authentication (optional) |
 
+#### Migrating V1 `tui.json` settings
+
+OpenCode V2 replaces V1's `tui.json(c)` with a single global `~/.config/opencode/cli.json`
+([migration guide](https://opencode.ai/v2/docs/migrate-v1/#terminal-client-configuration)).
+V2 only migrates `tui.json` automatically when `cli.json` does not exist yet, but the wrapper
+creates an empty `cli.json` before the first run so it can be mounted read-write over the
+read-only config directory. **The wrapper therefore never starts this migration on its own.**
+
+To keep your V1 terminal settings, do one of the following before (or after) your first run:
+
+- Run a native V2 `opencode` once on the host with no `cli.json` present, and let it migrate `tui.json`.
+- Or move the settings into `~/.config/opencode/cli.json` by hand, following the
+  [CLI settings reference](https://opencode.ai/v2/docs/cli/config/).
+
+Project-local `tui.json` files are not migrated; V2 client settings are global only.
 
 ### Custom Global Configuration (Optional)
 
@@ -269,7 +291,6 @@ Configuration is stored in `~/.config/opencode-dockerized/config` (INI format):
 # Settings (built-in features)
 # Format: setting.<name>=<value>
 setting.ssh_agent_support=true
-setting.openspec_support=true
 setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.graphify_support=true
@@ -409,51 +430,6 @@ The container includes full support for [Oh My OpenCode](https://github.com/code
 
 For more information, see the [Oh My OpenCode documentation](https://github.com/code-yeongyu/oh-my-opencode).
 
-### OpenSpec Support
-
-The container includes [OpenSpec](https://github.com/Fission-AI/OpenSpec/), a spec-driven development (SDD) framework for AI coding assistants. OpenSpec helps you agree on what to build before any code is written.
-
-**To enable OpenSpec:**
-
-1. During setup, answer "y" when prompted for OpenSpec support:
-   ```bash
-   ./setup.sh
-   # ... when prompted:
-   # Enable OpenSpec support? (y/N): y
-   ```
-
-2. Or manually set in `~/.config/opencode-dockerized/config`:
-   ```ini
-   setting.openspec_support=true
-   ```
-
-**To use OpenSpec inside the container:**
-
-```bash
-# Initialize OpenSpec in your project (first time)
-openspec init
-
-# Start a new spec-driven change
-/opsx:new add-dark-mode
-
-# Fast-forward through planning artifacts
-/opsx:ff
-
-# Implement the planned tasks
-/opsx:apply
-
-# Archive completed change
-/opsx:archive
-```
-
-**Features:**
-- Spec-driven workflows with `/opsx:*` slash commands
-- Supports 20+ AI coding assistants (including OpenCode)
-- Lightweight spec layer for predictable AI coding
-- Works within the mounted project directory
-
-For more information, see the [OpenSpec documentation](https://github.com/Fission-AI/OpenSpec/).
-
 ### Graphify Support
 
 The image ships [graphify](https://pypi.org/project/graphifyy/), which builds a code
@@ -483,6 +459,15 @@ produces on its own:
   `{command,commands}/**/*.md` — so nothing registers `/graphify` on its own. The file is
   written once and your edits to it are kept; delete it to get the default back. It has
   to live in the project because `~/.config/opencode` is mounted read-only.
+
+OpenCode V2 plugins must `export default { id, setup }`, but `graphify opencode install`
+still writes the V1 form (`.opencode/plugins/graphify.js` plus a `"plugin"` entry in
+`.opencode/opencode.json`), which V2 reports as "Plugin must export a default definition
+with an id and an effect or setup function". On every launch the entrypoint therefore
+rewrites that file as a V2 plugin (same reminder, hooked on the `shell` tool) and removes the
+now-redundant `"plugin"` entry — V2 discovers `.opencode/plugins/*.js` on its own and would
+otherwise try to install the path as an npm package. A JSONC `opencode.json` is left alone
+with a hint.
 
 All steps are non-fatal: a failure prints a hint and OpenCode starts anyway.
 
@@ -530,7 +515,9 @@ project-local `.opencode/`, `.claude/` and `.agents/` directories. `~/.config/op
 mounted read-only, so `~/.agents` is the only *global* skill location the container can
 write to — the skills themselves never touch the project, unlike the project-scoped
 registration graphify needs. The container runs with `--rm`, so the copy is fresh on every
-launch and nothing is left behind on the host.
+launch and nothing is left behind on the host. If you have your own `~/.agents/skills/`
+on the host, its skills are mounted read-only one by one next to the copied ones (a host
+skill with the same name as a Matt Pocock skill wins).
 
 OpenCode does register every discovered skill as a command of its own name, so typing a
 skill name in full always works. Its TUI, however, skips skill-sourced entries when it
@@ -587,86 +574,26 @@ and update them with `npx skills@latest update` without a rebuild.
 
 ### Customizing System Prompts
 
-OpenCode ships a large built-in system prompt — roughly 2–3k tokens once the
-environment block, `AGENTS.md`, MCP instructions and the skills list are added.
-The prompt is chosen by substring match on the model ID, so anything that isn't
-`gpt*`, `gemini-*`, `claude*`, `trinity*` or `kimi*` — i.e. every local model —
-gets the generic 8.5 KB `default.txt`. On a 30B model running on your own GPU,
-that preamble is a real slice of the context window.
-
-The prompts are compiled into the OpenCode binary, so there is no file in the
-container to edit. They are replaced through config instead.
-
-This repo ships slimmed-down replacements in `config/opencode/prompts/`, which
-`setup.sh` copies to `~/.config/opencode/prompts/`:
-
-| File | Replaces | Size | Built-in |
-|------|----------|------|----------|
-| `build-slim.md` | build/plan agent prompt | ~3.3 KB | ~8.5 KB |
-| `title-slim.md` | session title agent prompt | ~0.7 KB | ~2.1 KB |
-
-`build-slim.md` is not only a trim: on top of the slimmed built-in rules it adds
-a `# Naming` section (self-explanatory, fully spelled-out identifiers) and an
-`# Above all` section (think first, keep it simple, keep changes surgical).
-Those are opinionated house rules and the last ~1.3 KB of the file — delete the
-two sections if you only want the size win.
-
-They are **not active by default**. To enable them, add to
+OpenCode V2's built-in prompts and tool descriptions are already compact, so a replacement
+build prompt no longer saves anything. The one prompt still worth replacing is the session
+title prompt, which `setup.sh` copies to `~/.config/opencode/prompts/title-slim.md`
+(~0.7 KB instead of ~2.1 KB). It is **not active by default**; enable it in
 `~/.config/opencode/opencode.json`:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "agent": {
-    "build": { "prompt": "{file:./prompts/build-slim.md}" },
-    "plan":  { "prompt": "{file:./prompts/build-slim.md}" },
     "title": { "prompt": "{file:./prompts/title-slim.md}" }
   }
 }
 ```
 
-Since `~/.config/opencode/` is mounted into the container, this takes effect on
-the next `run` — no rebuild needed. `{file:...}` paths resolve relative to
-`opencode.json` itself.
-
-Setting `prompt` **replaces** the built-in prompt rather than adding to it. To
-*add* instructions, use `AGENTS.md` or the `instructions` config field instead.
-
-The skills block can be dropped with `"permission": { "skill": "deny" }`, and
-the environment block can be stripped with an
-`experimental.chat.system.transform` plugin.
-
-See [`config/opencode/prompts/README.md`](config/opencode/prompts/README.md)
-for the full details, the plugin snippet, and the caveats.
-
-### Condensing Tool Descriptions
-
-The system prompt is only half the fixed cost. OpenCode's built-in **tool
-descriptions** are another ~16 KB (~4k tokens) of JSON, re-sent in full with
-every message — `bash` alone is 4.6 KB, more than the whole slim build prompt.
-
-`config/opencode/plugin/slim-tools.js`, copied to
-`~/.config/opencode/plugin/` by `setup.sh`, rewrites them through OpenCode's
-`tool.definition` hook: **16.1 KB → 6.2 KB**, about 2.5k tokens back per
-request. The rules that steer behaviour stay (read before edit, `workdir`
-instead of `cd`, use the dedicated tools, don't commit unless asked); the
-restatement, the example pairs and the "Usage notes:" scaffolding go.
-`apply_patch` and `lsp` are left alone, since paraphrasing a format
-specification is how you get patches that don't apply.
-
-It is **inert until switched on**. Add the variable to your config
-(`env.custom1=OPENCODE_SLIM_TOOLS` — via `./setup.sh` or
-`~/.config/opencode-dockerized/config`) and export it on the host:
-
-```bash
-export OPENCODE_SLIM_TOOLS=1
-opencode-dockerized
-```
-
-`OPENCODE_SLIM_TOOLS_SKIP=bash,todowrite` keeps the built-in text for
-individual tools. See
-[`config/opencode/plugin/README.md`](config/opencode/plugin/README.md) for the
-per-tool sizes, how to verify what is actually sent, and the caveats.
+`{file:...}` resolves relative to `opencode.json`, which is mounted into the container, so
+this takes effect on the next `run`. Setting `prompt` **replaces** the built-in prompt; to
+*add* instructions use `AGENTS.md` or the `instructions` config field. See
+[`config/opencode/prompts/README.md`](config/opencode/prompts/README.md) for measured
+sizes and how to check what is actually sent.
 
 ### LLM Traffic Interception (llm-interceptor)
 
@@ -726,6 +653,13 @@ setting.llm_interceptor_capture_local=true
 The trade-off is that `pumlsrv` is then routed through the proxy as well, so it needs `lli watch`
 running. Alternatively leave this off and point OpenCode at the host's LAN address instead of
 `127.0.0.1`. Fine-tune with `LLM_INTERCEPTOR_NO_PROXY` if you need something in between.
+
+OpenCode's own client talks to its server over HTTP on loopback too. With loopback proxied, that
+link would go through `lli` and the TUI would show *"Connection lost… Reconnecting to the server
+automatically."* To avoid it, `capture_local=true` makes the wrapper start OpenCode's private server
+on `127.0.0.2` (the rest of `127.0.0.0/8` is loopback as well) and attach with `--server`, while the
+entrypoint always lists `127.0.0.2` in `NO_PROXY`. Your local model on `127.0.0.1`/`localhost` stays
+proxied. Don't point a local model at `127.0.0.2`, or its traffic will bypass the proxy.
 
 **2. `lli` has to decide to record it.** `lli` is not a general traffic recorder — it only writes a
 session when the URL matches its filter, which by default is a regex allowlist of hosted providers:
@@ -856,7 +790,7 @@ opencode-dockerized update
 
 ### Core Files
 
-- **`Dockerfile`** - Container image definition (Debian + Node.js/NVM + Java/SDKMAN + Bun + OpenCode + OpenSpec)
+- **`Dockerfile`** - Container image definition (Debian + Node.js/NVM + Java/SDKMAN + Bun + OpenCode)
 - **`entrypoint.sh`** - UID/GID mapping for file permissions
 
 ### User Scripts
@@ -881,9 +815,7 @@ opencode-dockerized update
 
 ### Templates (`config/`)
 
-- **`config/openspec/config.json`** - OpenSpec config template (copied to `~/.config/openspec/`)
-- **`config/opencode/prompts/`** - Slim system prompt replacements (copied to `~/.config/opencode/prompts/`, opt-in)
-- **`config/opencode/plugin/`** - Plugins, e.g. `slim-tools.js` for condensed tool descriptions (copied to `~/.config/opencode/plugin/`, opt-in)
+- **`config/opencode/prompts/`** - Slim session-title prompt (copied to `~/.config/opencode/prompts/`, opt-in)
 
 ### Configuration
 - **`.gitignore`** - Excludes sensitive files from Git
@@ -894,7 +826,7 @@ opencode-dockerized update
 1. **Base Image**: Uses Debian Bookworm slim for minimal footprint
 2. **Docker CLI Only**: Installs only Docker CLI (uses host's Docker daemon via socket)
 3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv), Bun, ast-grep, tmux, Git, and essential CLI tools
-4. **OpenCode & OpenSpec Installation**: Installs latest OpenCode and OpenSpec via npm
+4. **OpenCode Installation**: Installs latest OpenCode V2 (`@opencode/cli`) via npm
 5. **Oh My OpenCode Support**: Pre-configured with tools needed for oh-my-opencode plugin (ast-grep, tmux, bun)
 6. **User Management**: Creates non-root `coder` user with UID/GID matching
 7. **Entrypoint**: Adjusts permissions and switches to non-root user
@@ -991,7 +923,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 This project uses and packages the following third-party software:
 
 - **[OpenCode](https://github.com/sst/opencode)** - Apache 2.0 License (packaged in container)
-- **[OpenSpec](https://github.com/Fission-AI/OpenSpec/)** - MIT License (packaged in container)
 - **[Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode)** - MIT License (optional plugin support)
 - **Docker CLI** - Apache 2.0 License (packaged in container)
 - **Node.js** - MIT License (packaged in container)

@@ -45,21 +45,6 @@ check_docker() {
     fi
 }
 
-# Function to verify OpenSpec is installed in the Docker image
-# Called when OPENSPEC_SUPPORT is enabled to confirm the binary is available
-check_openspec() {
-    if [ "$OPENSPEC_SUPPORT" != true ]; then
-        return 0
-    fi
-
-    if ! docker run --rm --entrypoint bash "$IMAGE_NAME" -c "command -v openspec" >/dev/null 2>&1; then
-        print_warning "OpenSpec support is enabled but 'openspec' was not found in the image"
-        print_info "Rebuild the image to install OpenSpec: $0 build"
-        return 1
-    fi
-    return 0
-}
-
 # Function to build the Docker image
 build_image() {
     print_info "Building OpenCode Docker image..."
@@ -81,6 +66,10 @@ check_config() {
         missing_files+=("$HOME/.local/share/opencode/")
     fi
 
+    if [ ! -d "$HOME/.local/state/opencode" ]; then
+        missing_files+=("$HOME/.local/state/opencode/")
+    fi
+
     if [ ${#missing_files[@]} -gt 0 ]; then
         print_warning "Some OpenCode configuration files are missing:"
         for file in "${missing_files[@]}"; do
@@ -94,81 +83,74 @@ check_config() {
     ensure_opencode_dirs
 }
 
-# Function to run OpenCode authentication
-run_auth() {
+# Run a one-off OpenCode CLI command inside the container.
+# The project directory is mounted so project-level configuration applies.
+# Usage: run_cli_command <name_suffix> <project_dir> <config_writable> <docker_socket> <opencode_args...>
+run_cli_command() {
+    local name_suffix="$1"
+    local project_dir="$2"
+    local config_writable="$3"
+    local docker_socket="$4"
+    shift 4
+
+    if [ -n "$project_dir" ]; then
+        if [ ! -d "$project_dir" ]; then
+            print_error "Project directory does not exist: $project_dir"
+            exit 1
+        fi
+        project_dir="$(cd "$project_dir" && pwd)"
+    fi
+
     check_image "$IMAGE_NAME" || exit 1
-
-    print_info "Running OpenCode authentication..."
-
-    # Ensure OpenCode directories exist
     ensure_opencode_dirs
 
-    # Parse custom config and build docker arguments
     parse_config
     build_mount_args
     build_env_args
     build_common_docker_args
+    build_standard_volume_args "$project_dir" "$docker_socket" "$config_writable"
+    build_standalone_cmd "$@"
 
-    # Build volume mount arguments for auth
-    local -a auth_volume_args=(
-        -v "$HOME/.local/share/opencode:/home/coder/.local/share/opencode"
-        -v "$HOME/.cache/opencode:/home/coder/.cache/opencode"
-        # Config directory read-write for writing opencode.json during auth
-        -v "$HOME/.config/opencode:/home/coder/.config/opencode"
+    # Allocate a TTY only when attached to one, so the command stays pipeable
+    local -a tty_args=(-i)
+    [ -t 0 ] && [ -t 1 ] && tty_args=(-it)
+
+    local -a workdir_args=()
+    [ -n "$CONTAINER_WORKDIR" ] && workdir_args=(--workdir "$CONTAINER_WORKDIR")
+
+    local -a docker_cmd=(
+        docker run "${tty_args[@]}"
+        --name "opencode-${name_suffix}-$$"
+        "${workdir_args[@]}"
+        "${DOCKER_COMMON_ARGS[@]}"
+        "${VOLUME_ARGS[@]}"
+        "${GIT_WORKTREE_ARGS[@]}"
+        "${DOCKER_MOUNT_ARGS[@]}"
+        "${DOCKER_ENV_ARGS[@]}"
+        "$IMAGE_NAME"
+        "${STANDALONE_CMD[@]}"
     )
 
-    # Run OpenCode auth login in Docker
-    if ! docker run -it \
-        --name "opencode-auth-$$" \
-        "${DOCKER_COMMON_ARGS[@]}" \
-        "${auth_volume_args[@]}" \
-        "${DOCKER_MOUNT_ARGS[@]}" \
-        "${DOCKER_ENV_ARGS[@]}" \
-        "$IMAGE_NAME" \
-        opencode auth login; then
+    if [ "${DRY_RUN:-false}" = true ]; then
+        print_info "Dry run — would execute:"
+        echo "${docker_cmd[*]}"
+        return 0
+    fi
+
+    "${docker_cmd[@]}"
+}
+
+# Function to run OpenCode authentication
+run_auth() {
+    print_info "Running OpenCode authentication..."
+
+    # Config directory is writable so auth can persist opencode.json
+    if ! run_cli_command auth "" true false opencode auth login --standalone; then
         print_error "Authentication failed"
         exit 1
     fi
 
     print_success "Authentication complete! Your credentials are saved in $HOME/.local/share/opencode"
-}
-
-# Function to list available models (passes arguments through, e.g. --refresh)
-run_models() {
-    check_image "$IMAGE_NAME" || exit 1
-
-    ensure_opencode_dirs
-
-    # Parse custom config and build docker arguments
-    parse_config
-    build_mount_args
-    build_env_args
-    build_common_docker_args
-
-    # Config read-only; cache read-write so --refresh can update the models cache
-    local -a models_volume_args=(
-        -v "$HOME/.local/share/opencode:/home/coder/.local/share/opencode"
-        -v "$HOME/.cache/opencode:/home/coder/.cache/opencode"
-        -v "$HOME/.config/opencode:/home/coder/.config/opencode:ro"
-    )
-
-    local -a tty_args=()
-    if [ -t 0 ] && [ -t 1 ]; then
-        tty_args=(-it)
-    fi
-
-    if ! docker run \
-        "${tty_args[@]}" \
-        --name "opencode-models-$$" \
-        "${DOCKER_COMMON_ARGS[@]}" \
-        "${models_volume_args[@]}" \
-        "${DOCKER_MOUNT_ARGS[@]}" \
-        "${DOCKER_ENV_ARGS[@]}" \
-        "$IMAGE_NAME" \
-        opencode models "$@"; then
-        print_error "Listing models failed"
-        exit 1
-    fi
 }
 
 # Function to run OpenCode
@@ -204,12 +186,12 @@ run_opencode() {
     build_env_args
     build_common_docker_args
     build_standard_volume_args "$project_dir" true
-
-    # Verify OpenSpec is available in the image if enabled
-    check_openspec
+    build_standalone_cmd opencode --standalone
 
     # Build the full docker run command as an array
     # CONTAINER_WORKDIR is set by build_standard_volume_args (host path with $HOME stripped)
+    # --standalone gives the container its own private server: with --network host the
+    # client would otherwise attach to a shared server running outside the sandbox.
     local -a docker_cmd=(
         docker run -it
         --name "$container_name"
@@ -221,7 +203,7 @@ run_opencode() {
         "${DOCKER_MOUNT_ARGS[@]}"
         "${DOCKER_ENV_ARGS[@]}"
         "$IMAGE_NAME"
-        opencode
+        "${STANDALONE_CMD[@]}"
     )
 
     if [ "$dry_run" = true ]; then
@@ -249,19 +231,79 @@ update_opencode() {
 
     # Show current version before update
     print_info "Current OpenCode version:"
-    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g opencode-ai --depth=0" 2>/dev/null || true
-    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g @fission-ai/openspec --depth=0" 2>/dev/null || true
+    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g @opencode/cli --depth=0" 2>/dev/null || true
 
     # Rebuild with cache-busting to force fresh npm install
-    print_info "Rebuilding image with latest OpenCode and OpenSpec..."
+    print_info "Rebuilding image with latest OpenCode..."
     docker build --progress=plain --build-arg "OPENCODE_BUILD_TIME=$(date +%s)" -t "$IMAGE_NAME" "$SCRIPT_DIR"
 
     # Show new version after update
     print_info "Updated OpenCode version:"
-    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g opencode-ai --depth=0" 2>/dev/null || true
-    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g @fission-ai/openspec --depth=0" 2>/dev/null || true
+    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g @opencode/cli --depth=0" 2>/dev/null || true
 
     print_success "OpenCode updated successfully"
+}
+
+# Run an opencode command against a private server once <ready_path> matches <ready_pattern>
+# Usage: run_with_private_server <name_suffix> <project_dir> <ready_path> <ready_pattern> <opencode_args...>
+run_with_private_server() {
+    local name_suffix="$1"
+    local project_dir="$2"
+    local ready_path="$3"
+    local ready_pattern="$4"
+    shift 4
+    run_cli_command "$name_suffix" "$project_dir" false false \
+        bash -c "$PRIVATE_SERVER_SCRIPT" private-server \
+        "$PRIVATE_SERVER_HOST" "$ready_path" "$ready_pattern" "$PRIVATE_SERVER_TIMEOUT" "$@"
+}
+
+# Function to list the models available to the configured providers
+list_models() {
+    run_with_private_server models "${1:-$(pwd)}" /api/model '"id"' models
+}
+
+# Function to show usage statistics
+show_stats() {
+    run_with_private_server stats "$(pwd)" /health . stats "$@"
+}
+
+# Function to manage MCP servers (list, add, auth, logout)
+manage_mcp() {
+    local subcommand="${1:-list}"
+    shift || true
+    # 'add' persists to the global config, so the config mount must be writable
+    local config_writable=false
+    [ "$subcommand" = "add" ] && config_writable=true
+    run_cli_command mcp "$(pwd)" "$config_writable" false opencode mcp "$subcommand" "$@"
+}
+
+# Function to manage plugins (list, add, check, update, remove)
+manage_plugins() {
+    local subcommand="${1:-list}"
+    shift || true
+    # add/update/remove persist to the global config, so it must be writable
+    local config_writable=false
+    case "$subcommand" in
+        add|update|remove) config_writable=true ;;
+    esac
+    run_cli_command plugin "$(pwd)" "$config_writable" false opencode plugin "$subcommand" "$@"
+}
+
+# Function to run OpenCode debugging tools (agents, config, paths)
+run_debug() {
+    local subcommand="${1:-paths}"
+    shift || true
+    run_cli_command debug "$(pwd)" false false opencode debug "$subcommand" "$@"
+}
+
+# Function to run a non-interactive prompt and print the result
+exec_prompt() {
+    if [ $# -eq 0 ]; then
+        print_error "A message is required: $0 exec \"<message>\" [OPTIONS]"
+        exit 1
+    fi
+    # Docker socket is mounted because the agent executes tools here, as in 'run'
+    run_cli_command exec "$(pwd)" false true opencode run --standalone "$@"
 }
 
 # Function to clean up Docker image
@@ -317,7 +359,12 @@ Usage: $0 [COMMAND] [OPTIONS]
 Commands:
     run [DIR]           Run OpenCode in Docker (default: current directory)
     auth                Run OpenCode authentication (opencode auth login)
-    models [ARGS]       List available models (e.g. models --refresh to refresh the cache)
+    models [DIR]        List models available to the configured providers
+    exec MSG [OPTS]     Run a non-interactive prompt (opencode run)
+    mcp [ARGS]          Manage MCP servers (list|add|auth|logout, default: list)
+    plugin [ARGS]       Manage plugins (list|add|check|update|remove, default: list)
+    stats [OPTS]        Show usage statistics
+    debug [ARGS]        Debugging tools (paths|config|agents, default: paths)
     build               Build the Docker image
     update              Update OpenCode to the latest version
     version             Show OpenCode version in the container
@@ -332,7 +379,12 @@ Examples:
     $0 run                          # Run in current directory
     $0 run /path/to/project         # Run in specific directory
     $0 auth                         # Authenticate with your LLM provider
-    $0 models --refresh             # Refresh and list available models
+    $0 models                       # List available models
+    $0 exec "Explain this repo"     # Non-interactive prompt
+    $0 mcp list                     # Show MCP servers and their status
+    $0 plugin list                  # Show loaded plugins
+    $0 stats --days 7               # Usage for the last 7 days
+    $0 debug config                 # Show configuration sources
     $0 build                        # Build the Docker image
     $0 update                       # Update OpenCode to latest version
     $0 config show                  # Show current configuration
@@ -352,13 +404,6 @@ Security Features:
     - Non-root user: runs as non-root user inside container
     - Automatic cleanup: containers are removed on exit (--rm)
 
-OpenSpec (Spec-Driven Development):
-    When enabled (setting.openspec_support=true in config), OpenSpec is available
-    inside the container. On first run for a project, 'openspec init --tools opencode'
-    is automatically executed. On every run, 'openspec update' regenerates instruction
-    files to stay in sync with the installed CLI version.
-    See: https://github.com/Fission-AI/OpenSpec/
-
 Note: Docker socket is mounted for Docker-in-Docker support. This grants the
 container full access to the host Docker daemon. Disable by removing the socket
 mount in the config if not needed.
@@ -371,13 +416,6 @@ EOF
 show_version() {
     check_image "$IMAGE_NAME" || exit 1
     docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && opencode --version"
-
-    # Show OpenSpec version if support is enabled
-    parse_config
-    if [ "$OPENSPEC_SUPPORT" = true ]; then
-        print_info "OpenSpec version:"
-        docker run --rm --entrypoint bash "$IMAGE_NAME" -c "command -v openspec >/dev/null 2>&1 && openspec --version || echo 'openspec not found in image'"
-    fi
 }
 
 # Main script logic
@@ -396,7 +434,22 @@ main() {
             run_auth
             ;;
         models)
-            run_models "$@"
+            list_models "$@"
+            ;;
+        exec)
+            exec_prompt "$@"
+            ;;
+        mcp)
+            manage_mcp "$@"
+            ;;
+        plugin)
+            manage_plugins "$@"
+            ;;
+        stats)
+            show_stats "$@"
+            ;;
+        debug)
+            run_debug "$@"
             ;;
         build)
             build_image

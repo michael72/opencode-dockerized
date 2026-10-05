@@ -62,6 +62,7 @@ ensure_dir "$HOME/.config/opencode/agent"
 ensure_dir "$HOME/.config/opencode/plugin"
 ensure_dir "$HOME/.config/opencode/command"
 ensure_dir "$HOME/.local/share/opencode"
+ensure_dir "$HOME/.local/state/opencode"
 ensure_dir "$HOME/.cache/opencode"
 ensure_dir "$HOME/.cache/oh-my-opencode"
 ensure_dir "$HOME/.mcp-auth"
@@ -69,21 +70,8 @@ ensure_dir "$HOME/.mcp-auth"
 # Check/create OpenCode config files
 ensure_any_file '{}' "$HOME/.config/opencode/opencode.json" "$HOME/.config/opencode/opencode.jsonc"
 
-# Copy OpenSpec config if not already present
-ensure_dir "$HOME/.config/openspec"
-if [ ! -f "$HOME/.config/openspec/config.json" ]; then
-    if [ -f "$SCRIPT_DIR/config/openspec/config.json" ]; then
-        cp "$SCRIPT_DIR/config/openspec/config.json" "$HOME/.config/openspec/config.json"
-        echo -e "${GREEN}✓${NC} Copied OpenSpec config to ~/.config/openspec/config.json"
-    else
-        print_warning "OpenSpec config template not found at $SCRIPT_DIR/config/openspec/config.json"
-    fi
-else
-    echo -e "${GREEN}✓${NC} OpenSpec config already exists at ~/.config/openspec/config.json"
-fi
-
-# Copy slim system prompt templates (not enabled automatically — see
-# config/opencode/prompts/README.md for how to wire them into opencode.json)
+# Copy the slim title prompt (not enabled automatically — see
+# config/opencode/prompts/README.md for how to wire it into opencode.json)
 ensure_dir "$HOME/.config/opencode/prompts"
 if [ -d "$SCRIPT_DIR/config/opencode/prompts" ]; then
     prompts_copied=false
@@ -96,37 +84,28 @@ if [ -d "$SCRIPT_DIR/config/opencode/prompts" ]; then
         fi
     done
     if [ "$prompts_copied" = true ]; then
-        echo -e "${GREEN}✓${NC} Copied slim system prompts to ~/.config/opencode/prompts/"
+        echo -e "${GREEN}✓${NC} Copied slim title prompt to ~/.config/opencode/prompts/"
         echo -e "${YELLOW}  Not active yet — see ~/.config/opencode/prompts/README.md to enable${NC}"
     else
-        echo -e "${GREEN}✓${NC} Slim system prompts already present in ~/.config/opencode/prompts/"
+        echo -e "${GREEN}✓${NC} Slim title prompt already present in ~/.config/opencode/prompts/"
     fi
 else
     print_warning "Prompt templates not found at $SCRIPT_DIR/config/opencode/prompts"
 fi
 
-# Copy plugins (inert until switched on — see config/opencode/plugin/README.md)
-if [ -d "$SCRIPT_DIR/config/opencode/plugin" ]; then
-    plugins_copied=false
-    for plugin_file in "$SCRIPT_DIR"/config/opencode/plugin/*.js; do
-        [ -f "$plugin_file" ] || continue
-        plugin_target="$HOME/.config/opencode/plugin/$(basename "$plugin_file")"
-        if [ ! -f "$plugin_target" ]; then
-            cp "$plugin_file" "$plugin_target"
-            plugins_copied=true
-        fi
-    done
-    if [ -f "$SCRIPT_DIR/config/opencode/plugin/README.md" ] && [ ! -f "$HOME/.config/opencode/plugin/README.md" ]; then
-        cp "$SCRIPT_DIR/config/opencode/plugin/README.md" "$HOME/.config/opencode/plugin/README.md"
+# slim-tools.js was shipped here until OpenCode V2. It used the V1 plugin format,
+# which V2 rejects at startup ("Plugin must export a default definition with an
+# id and an effect or setup function"), and V2's built-in tool descriptions are
+# already smaller than the slim ones, so it is no longer provided. Remove a copy
+# an earlier setup.sh left behind. The signature check leaves a file you wrote
+# yourself alone.
+stale_plugin="$HOME/.config/opencode/plugin/slim-tools.js"
+if [ -f "$stale_plugin" ] && grep -q 'export const SlimTools' "$stale_plugin"; then
+    rm -f "$stale_plugin"
+    echo -e "${GREEN}✓${NC} Removed obsolete ~/.config/opencode/plugin/slim-tools.js (not compatible with OpenCode V2)"
+    if [ -f "$HOME/.config/opencode/plugin/README.md" ] && grep -q 'slim-tools' "$HOME/.config/opencode/plugin/README.md"; then
+        rm -f "$HOME/.config/opencode/plugin/README.md"
     fi
-    if [ "$plugins_copied" = true ]; then
-        echo -e "${GREEN}✓${NC} Copied plugins to ~/.config/opencode/plugin/"
-        echo -e "${YELLOW}  slim-tools is inert until OPENCODE_SLIM_TOOLS=1 — see ~/.config/opencode/plugin/README.md${NC}"
-    else
-        echo -e "${GREEN}✓${NC} Plugins already present in ~/.config/opencode/plugin/"
-    fi
-else
-    print_warning "Plugins not found at $SCRIPT_DIR/config/opencode/plugin"
 fi
 
 interactive_config_setup
@@ -477,14 +456,6 @@ echo ""
 echo "  3. Run OpenCode in your project:"
 echo "     opencode-dockerized run /path/to/your/project"
 echo ""
-
-# Show OpenSpec instructions only if it was enabled
-if [ "$OPENSPEC_SUPPORT" = true ]; then
-    echo "  4. OpenSpec will automatically initialize when you first run OpenCode"
-    echo "     in a project that doesn't have an openspec/ directory yet."
-    echo "     It runs: openspec init --tools opencode && openspec update"
-    echo ""
-fi
 
 echo "Note: If you already have OpenCode configured locally, your"
 echo "      existing authentication will be automatically available."

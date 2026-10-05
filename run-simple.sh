@@ -58,6 +58,7 @@ build_common_docker_args
 
 # Build standard volume mount arguments (with Docker socket)
 build_standard_volume_args "$PROJECT_DIR" true
+build_standalone_cmd opencode --standalone
 
 # Generate unique container name
 local_dir_name=$(sanitize_container_name "$(basename "$PROJECT_DIR")")
@@ -66,6 +67,7 @@ CONTAINER_NAME="opencode-${local_dir_name}-${local_random_suffix}"
 
 # Run OpenCode in Docker
 # CONTAINER_WORKDIR is set by build_standard_volume_args (host path with $HOME stripped)
+# --standalone keeps the server inside the container instead of attaching to a host server
 docker run -it \
     --name "$CONTAINER_NAME" \
     --workdir "$CONTAINER_WORKDIR" \
@@ -76,4 +78,4 @@ docker run -it \
     "${DOCKER_MOUNT_ARGS[@]}" \
     "${DOCKER_ENV_ARGS[@]}" \
     "$IMAGE_NAME" \
-    opencode
+    "${STANDALONE_CMD[@]}"
