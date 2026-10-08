@@ -597,6 +597,8 @@ init_config_file() {
 # dependency resolution, compiler bridge). When enabled, a private copy of ~/.sbt,
 # the Coursier cache and ~/.ivy2 is kept in sbt_cache_dir, seeded from the host on
 # first use, and mounted read-write. The host's own caches are never exposed.
+# Global setting, but only applied to sbt projects (a *.sbt file or
+# project/build.properties in the project directory).
 # Manage it with './opencode-dockerized.sh sbt-cache [seed|status|reset]'.
 # setting.sbt_cache_support=false
 # setting.sbt_cache_dir=~/.cache/opencode-dockerized
