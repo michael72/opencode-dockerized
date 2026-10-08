@@ -82,6 +82,9 @@ GRAPHIFY_SUPPORT=true            # Boolean flag for the per-project graphify kno
 MATT_POCOCK_SKILLS_SUPPORT=false # Boolean flag for Matt Pocock's agent skills (~/.agents/skills)
 SBT_CACHE_SUPPORT=false          # Boolean flag for a container-private copy of the sbt/Coursier/Ivy caches
 : "${SBT_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding that copy (sbt/, coursier/, ivy2/)
+UV_CACHE_SUPPORT=false           # Boolean flag for a container-private copy of the uv package cache
+# Not called UV_CACHE_DIR: that is uv's own variable and would be picked up from the host's environment
+: "${UV_PRIVATE_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding that copy (uv/)
 
 # ============================================
 # SHARED HELPERS
@@ -178,6 +181,42 @@ ensure_sbt_cache_dirs() {
             return 1
         fi
     done
+}
+
+# Succeeds when the directory is the root of a Python project (uv, pip or setuptools).
+# Like is_sbt_project, only that directory is looked at.
+# Usage: is_python_project "/path/to/project"
+is_python_project() {
+    local dir="$1"
+    local marker
+
+    [ -n "$dir" ] || return 1
+    for marker in pyproject.toml uv.lock requirements.txt setup.py setup.cfg Pipfile; do
+        [ -f "$dir/$marker" ] && return 0
+    done
+    return 1
+}
+
+# Create the container-private uv package cache under $UV_PRIVATE_CACHE_DIR/uv.
+# It is a copy, so whatever the container writes (including a tampered wheel) never
+# reaches the host's own uv cache.
+# Usage: ensure_uv_cache_dirs
+ensure_uv_cache_dirs() {
+    # Where the host's uv keeps its cache: UV_CACHE_DIR, else XDG_CACHE_HOME, else ~/.cache
+    local uv_src="${UV_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/uv}"
+    # macOS keeps it elsewhere; the layout below it is the same
+    if [ ! -d "$uv_src" ] && [ -d "$HOME/Library/Caches/uv" ]; then
+        uv_src="$HOME/Library/Caches/uv"
+    fi
+
+    mkdir -p "$UV_PRIVATE_CACHE_DIR" 2>/dev/null || true
+    seed_cache_dir "$uv_src" "$UV_PRIVATE_CACHE_DIR/uv"
+
+    # Same reason as for sbt: a failed mkdir would let 'docker run -v' create a root-owned path
+    if [ ! -d "$UV_PRIVATE_CACHE_DIR/uv" ] || [ ! -w "$UV_PRIVATE_CACHE_DIR/uv" ]; then
+        config_warning "uv cache directory $UV_PRIVATE_CACHE_DIR/uv is missing or not writable"
+        return 1
+    fi
 }
 
 # Check if Docker image exists locally
@@ -505,6 +544,23 @@ build_standard_volume_args() {
         fi
     fi
 
+    # uv package cache (opt-in) — a private, persistent copy of the host's, so wheels are
+    # not downloaded again in every --rm container. Only for Python projects, for the same
+    # reason as the sbt cache. The interpreters and tools baked into the image live in
+    # ~/.local/share/uv and are deliberately not touched.
+    # UV_LINK_MODE=copy: the cache mount and the venv (UV_PROJECT_ENVIRONMENT) are on
+    # different filesystems, so uv could not hardlink anyway and would only warn about it.
+    if [ "$UV_CACHE_SUPPORT" = true ] && is_python_project "$project_dir"; then
+        if ensure_uv_cache_dirs; then
+            VOLUME_ARGS+=(
+                -v "$UV_PRIVATE_CACHE_DIR/uv:/home/coder/.cache/uv"
+                -e "UV_LINK_MODE=copy"
+            )
+        else
+            config_warning "Starting without the private uv cache (check setting.uv_cache_dir)"
+        fi
+    fi
+
     # Git configuration (optional) — ensures commits use the host user's name and email
     if command -v git >/dev/null 2>&1 && [ -f "$HOME/.gitconfig" ]; then
         VOLUME_ARGS+=(-v "$HOME/.gitconfig:/home/coder/.gitconfig:ro")
@@ -603,6 +659,16 @@ init_config_file() {
 # setting.sbt_cache_support=false
 # setting.sbt_cache_dir=~/.cache/opencode-dockerized
 
+# uv package cache (for Python projects)
+# Containers use --rm, so uv would otherwise download every wheel again on each run.
+# When enabled, a private copy of the host's uv cache is kept in uv_cache_dir, seeded
+# from the host on first use, and mounted read-write. The host's own cache is never exposed.
+# Global setting, but only applied to Python projects (pyproject.toml, uv.lock,
+# requirements.txt, setup.py, setup.cfg or Pipfile in the project directory).
+# Manage it with './opencode-dockerized.sh uv-cache [seed|status|reset]'.
+# setting.uv_cache_support=false
+# setting.uv_cache_dir=~/.cache/opencode-dockerized
+
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
 # Examples:
@@ -658,6 +724,7 @@ load_config() {
     GRAPHIFY_SUPPORT=true
     MATT_POCOCK_SKILLS_SUPPORT=false
     SBT_CACHE_SUPPORT=false
+    UV_CACHE_SUPPORT=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ "$key" =~ ^[[:space:]]*setting\. ]] || continue
@@ -675,6 +742,10 @@ load_config() {
         # Expand a leading ~ the same way custom mounts do; an empty value keeps the default
         if [[ "$key" =~ sbt_cache_dir ]] && [ -n "$value" ]; then
             SBT_CACHE_DIR="${value/#\~/$HOME}"
+        fi
+        [[ "$key" =~ uv_cache_support ]] && [[ "$value" == "true" ]] && UV_CACHE_SUPPORT=true
+        if [[ "$key" =~ uv_cache_dir ]] && [ -n "$value" ]; then
+            UV_PRIVATE_CACHE_DIR="${value/#\~/$HOME}"
         fi
     done < "$CONFIG_FILE"
 
@@ -721,6 +792,12 @@ save_config() {
         echo "# never exposed. Manage with './opencode-dockerized.sh sbt-cache [seed|status|reset]'."
         echo "setting.sbt_cache_support=$SBT_CACHE_SUPPORT"
         echo "setting.sbt_cache_dir=$SBT_CACHE_DIR"
+        echo ""
+        echo "# uv package cache: a private copy, seeded from the host on first use, so uv does"
+        echo "# not download every wheel again in each --rm container. The host's own cache is"
+        echo "# never exposed. Manage with './opencode-dockerized.sh uv-cache [seed|status|reset]'."
+        echo "setting.uv_cache_support=$UV_CACHE_SUPPORT"
+        echo "setting.uv_cache_dir=$UV_PRIVATE_CACHE_DIR"
         echo ""
         echo "# Custom volume mounts (read-only by default)"
         echo "# Format: mount.<name>=<host_path>:<container_path>[:rw]"
@@ -1263,6 +1340,42 @@ prompt_sbt_cache_support() {
     fi
 }
 
+# Interactive prompt for the private uv package cache copy
+# UV_CACHE_SUPPORT defaults to false, so the question is phrased as an opt-in
+prompt_uv_cache_support() {
+    echo ""
+    config_info "uv package cache (Python projects)"
+
+    if [ "$UV_CACHE_SUPPORT" = true ]; then
+        config_success "The private uv cache is currently enabled (in $UV_PRIVATE_CACHE_DIR)"
+        read -r -p "Keep it enabled? (Y/n): " uv_cache
+        if [[ "$uv_cache" =~ ^[Nn]$ ]]; then
+            UV_CACHE_SUPPORT=false
+            config_info "Private uv cache disabled"
+        else
+            config_success "Private uv cache remains enabled"
+        fi
+    else
+        echo "Containers use --rm, so uv downloads every wheel again on each run. When"
+        echo "enabled, a private copy of the host's uv cache is kept in $UV_PRIVATE_CACHE_DIR,"
+        echo "seeded from the host on first use. The host's own cache is never exposed."
+        echo ""
+
+        read -r -p "Enable the private uv cache? (y/N): " uv_cache
+        if [[ "$uv_cache" =~ ^[Yy]$ ]]; then
+            UV_CACHE_SUPPORT=true
+            config_success "Private uv cache enabled"
+            read -r -p "Cache directory [$UV_PRIVATE_CACHE_DIR]: " uv_cache_dir
+            if [ -n "$uv_cache_dir" ]; then
+                UV_PRIVATE_CACHE_DIR="${uv_cache_dir/#\~/$HOME}"
+            fi
+        else
+            UV_CACHE_SUPPORT=false
+            config_info "Private uv cache disabled"
+        fi
+    fi
+}
+
 # Print current configuration (for debugging/info)
 print_config() {
     echo ""
@@ -1273,6 +1386,7 @@ print_config() {
     echo "  Graphify support: $GRAPHIFY_SUPPORT"
     echo "  Matt Pocock skills: $MATT_POCOCK_SKILLS_SUPPORT"
     echo "  Private sbt cache: $SBT_CACHE_SUPPORT ($SBT_CACHE_DIR)"
+    echo "  Private uv cache: $UV_CACHE_SUPPORT ($UV_PRIVATE_CACHE_DIR)"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
         echo ""
@@ -1320,6 +1434,7 @@ interactive_config_setup() {
             prompt_graphify_support
             prompt_matt_pocock_skills_support
             prompt_sbt_cache_support
+            prompt_uv_cache_support
             prompt_custom_mounts
             prompt_env_vars
             save_config
@@ -1333,9 +1448,10 @@ interactive_config_setup() {
                 prompt_graphify_support
                 prompt_matt_pocock_skills_support
                 prompt_sbt_cache_support
+                prompt_uv_cache_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ] || [ "$SBT_CACHE_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ] || [ "$SBT_CACHE_SUPPORT" = true ] || [ "$UV_CACHE_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

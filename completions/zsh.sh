@@ -20,6 +20,7 @@ _opencode_dockerized() {
         'version:Show OpenCode version in the container'
         'config:Show, edit, or print config file path'
         'sbt-cache:Manage the private sbt/Coursier/Ivy cache copy'
+        'uv-cache:Manage the private uv package cache copy'
         'clean:Remove the Docker image'
         'help:Show help message'
     )
@@ -45,6 +46,9 @@ _opencode_dockerized() {
                     ;;
                 sbt-cache)
                     _values 'sbt-cache subcommand' status seed reset
+                    ;;
+                uv-cache)
+                    _values 'uv-cache subcommand' status seed reset
                     ;;
                 debug)
                     _values 'debug subcommand' paths config agents
