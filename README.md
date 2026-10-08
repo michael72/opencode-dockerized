@@ -572,29 +572,6 @@ mount.agent_skills=~/.agents:/home/coder/.agents
 That route also lets you install only some of the skills (`--skill tdd --skill code-review`)
 and update them with `npx skills@latest update` without a rebuild.
 
-### Customizing System Prompts
-
-OpenCode V2's built-in prompts and tool descriptions are already compact, so a replacement
-build prompt no longer saves anything. The one prompt still worth replacing is the session
-title prompt, which `setup.sh` copies to `~/.config/opencode/prompts/title-slim.md`
-(~0.7 KB instead of ~2.1 KB). It is **not active by default**; enable it in
-`~/.config/opencode/opencode.json`:
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "agent": {
-    "title": { "prompt": "{file:./prompts/title-slim.md}" }
-  }
-}
-```
-
-`{file:...}` resolves relative to `opencode.json`, which is mounted into the container, so
-this takes effect on the next `run`. Setting `prompt` **replaces** the built-in prompt; to
-*add* instructions use `AGENTS.md` or the `instructions` config field. See
-[`config/opencode/prompts/README.md`](config/opencode/prompts/README.md) for measured
-sizes and how to check what is actually sent.
-
 ### LLM Traffic Interception (llm-interceptor)
 
 Capture the prompts and responses OpenCode exchanges with LLM providers using
@@ -812,10 +789,6 @@ opencode-dockerized update
 
 - **`examples/.env.example`** - Template for environment variables
 - **`examples/config.example`** - Example custom configuration file
-
-### Templates (`config/`)
-
-- **`config/opencode/prompts/`** - Slim session-title prompt (copied to `~/.config/opencode/prompts/`, opt-in)
 
 ### Configuration
 - **`.gitignore`** - Excludes sensitive files from Git
