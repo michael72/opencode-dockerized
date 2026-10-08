@@ -8,7 +8,7 @@ _opencode_dockerized() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="run auth models exec mcp plugin stats debug build update version config clean help --help -h"
+    opts="run auth models exec mcp plugin stats debug build update version config sbt-cache clean help --help -h"
 
     case "${prev}" in
         run|models)
@@ -19,6 +19,10 @@ _opencode_dockerized() {
         config)
             # Complete config subcommands
             mapfile -t COMPREPLY < <(compgen -W "show edit path" -- "${cur}")
+            return 0
+            ;;
+        sbt-cache)
+            mapfile -t COMPREPLY < <(compgen -W "status seed reset" -- "${cur}")
             return 0
             ;;
         mcp)

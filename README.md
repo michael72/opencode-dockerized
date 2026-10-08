@@ -295,6 +295,8 @@ setting.llm_interceptor_support=false
 setting.llm_interceptor_port=9090
 setting.graphify_support=true
 setting.matt_pocock_skills_support=false
+setting.sbt_cache_support=false
+setting.sbt_cache_dir=~/.cache/opencode-dockerized
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -493,6 +495,43 @@ to the project's `.gitignore`:
 /.opencode/opencode.json
 /.opencode/skills/graphify/
 ```
+
+### Private sbt Cache (Scala projects)
+
+Containers run with `--rm`, so sbt would start cold on every launch: it re-boots, re-resolves
+dependencies and recompiles the Zinc compiler bridge, which can add tens of seconds before the
+first `sbt test` even starts. Mounting your host's `~/.sbt` read-write would fix that, but then
+the container could plant a global sbt plugin or a tampered jar that your host sbt later runs.
+This opt-in setting keeps a **private copy** instead:
+
+```ini
+setting.sbt_cache_support=true
+setting.sbt_cache_dir=~/.cache/opencode-dockerized   # optional, this is the default
+```
+
+or answer "y" when `./setup.sh` asks. The setting is global, but the mounts are only added for
+sbt projects: the project directory must contain `build.sbt` (or any other `*.sbt` file) or
+`project/build.properties`. Other projects are left alone and never trigger the first-use copy
+below. On the first sbt session, `~/.sbt`, the Coursier cache
+(`~/.cache/coursier`, or `~/Library/Caches/Coursier` on macOS) and `~/.ivy2` are copied into
+`sbt/`, `coursier/` and `ivy2/` below `sbt_cache_dir` and mounted read-write at
+`/home/coder/.sbt`, `/home/coder/.cache/coursier` and `/home/coder/.ivy2`. Nothing is ever
+copied back to the host.
+
+```bash
+./opencode-dockerized.sh sbt-cache status   # enabled? where? how big?
+./opencode-dockerized.sh sbt-cache seed     # pre-copy now instead of on first run
+./opencode-dockerized.sh sbt-cache reset    # delete the copy and re-copy from the host
+```
+
+Things to know:
+
+- The copy may contain your sbt credentials (`~/.sbt/1.0/credentials`), so it is visible to the
+  agent. Delete them from the copy if you do not want that.
+- Once seeded, the copy is not re-synced; dependencies the container needs are simply fetched
+  into it. Use `sbt-cache reset` to start over from the host's current state.
+- This does not change the project's shared `target/` directory. If the container's JDK
+  (Temurin 21) differs from the host's, Zinc may still recompile when you switch sides.
 
 ### Matt Pocock's Agent Skills
 
