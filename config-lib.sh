@@ -80,6 +80,8 @@ LLM_INTERCEPTOR_PORT=9090        # Port the host-side 'lli watch' proxy listens 
 LLM_INTERCEPTOR_CAPTURE_LOCAL=false  # Also proxy loopback, so a local model (llama-server) is captured
 GRAPHIFY_SUPPORT=true            # Boolean flag for the per-project graphify knowledge graph (opt-out)
 MATT_POCOCK_SKILLS_SUPPORT=false # Boolean flag for Matt Pocock's agent skills (~/.agents/skills)
+SBT_CACHE_SUPPORT=false          # Boolean flag for a container-private copy of the sbt/Coursier/Ivy caches
+: "${SBT_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding that copy (sbt/, coursier/, ivy2/)
 
 # ============================================
 # SHARED HELPERS
@@ -111,6 +113,45 @@ ensure_opencode_dirs() {
     [ -f "$OPENCODE_CLI_CONFIG" ] || echo '{}' > "$OPENCODE_CLI_CONFIG" 2>/dev/null || true
     # Bun's default install cache — created up front so the mount is always available
     mkdir -p "$HOME/.bun/install/cache" 2>/dev/null || true
+}
+
+# Seed one cache directory from the host's own on first use.
+# The copy is made next to the target and renamed into place, so an interrupted copy
+# is never mistaken for a seeded cache. An existing target is left untouched.
+# Usage: seed_cache_dir "/host/source" "/private/target"
+seed_cache_dir() {
+    local src="$1"
+    local dst="$2"
+
+    [ -d "$dst" ] && return 0
+
+    if [ -d "$src" ]; then
+        config_info "Seeding $dst from $src (first use only, this can take a while)..."
+        rm -rf "$dst.seeding"
+        if cp -a "$src" "$dst.seeding" && mv "$dst.seeding" "$dst"; then
+            return 0
+        fi
+        rm -rf "$dst.seeding"
+        config_warning "Could not copy $src — starting with an empty cache"
+    fi
+    mkdir -p "$dst" 2>/dev/null || true
+}
+
+# Create the container-private sbt, Coursier and Ivy caches under $SBT_CACHE_DIR.
+# They are copies, so whatever the container writes (including a tampered jar or a
+# global sbt plugin) never reaches the host's own ~/.sbt or Coursier cache.
+# Usage: ensure_sbt_cache_dirs
+ensure_sbt_cache_dirs() {
+    local coursier_src="$HOME/.cache/coursier"
+    # macOS keeps the Coursier cache elsewhere; the layout below it (v1/...) is the same
+    if [ ! -d "$coursier_src" ] && [ -d "$HOME/Library/Caches/Coursier" ]; then
+        coursier_src="$HOME/Library/Caches/Coursier"
+    fi
+
+    mkdir -p "$SBT_CACHE_DIR" 2>/dev/null || true
+    seed_cache_dir "$HOME/.sbt" "$SBT_CACHE_DIR/sbt"
+    seed_cache_dir "$coursier_src" "$SBT_CACHE_DIR/coursier"
+    seed_cache_dir "$HOME/.ivy2" "$SBT_CACHE_DIR/ivy2"
 }
 
 # Check if Docker image exists locally
@@ -422,6 +463,18 @@ build_standard_volume_args() {
         VOLUME_ARGS+=(-v "$HOME/.bun/install/cache:/home/coder/.bun/install/cache")
     fi
 
+    # sbt, Coursier and Ivy caches (opt-in) — a private, persistent copy of the host's,
+    # so sbt does not start cold in every --rm container and the host's own caches
+    # stay out of the container's reach
+    if [ "$SBT_CACHE_SUPPORT" = true ]; then
+        ensure_sbt_cache_dirs
+        VOLUME_ARGS+=(
+            -v "$SBT_CACHE_DIR/sbt:/home/coder/.sbt"
+            -v "$SBT_CACHE_DIR/coursier:/home/coder/.cache/coursier"
+            -v "$SBT_CACHE_DIR/ivy2:/home/coder/.ivy2"
+        )
+    fi
+
     # Git configuration (optional) — ensures commits use the host user's name and email
     if command -v git >/dev/null 2>&1 && [ -f "$HOME/.gitconfig" ]; then
         VOLUME_ARGS+=(-v "$HOME/.gitconfig:/home/coder/.gitconfig:ro")
@@ -509,6 +562,15 @@ init_config_file() {
 # See: https://github.com/mattpocock/skills
 # setting.matt_pocock_skills_support=false
 
+# sbt / Coursier / Ivy caches (for Scala projects)
+# Containers use --rm, so sbt would otherwise start cold on every run (boot dir,
+# dependency resolution, compiler bridge). When enabled, a private copy of ~/.sbt,
+# the Coursier cache and ~/.ivy2 is kept in sbt_cache_dir, seeded from the host on
+# first use, and mounted read-write. The host's own caches are never exposed.
+# Manage it with './opencode-dockerized.sh sbt-cache [seed|status|reset]'.
+# setting.sbt_cache_support=false
+# setting.sbt_cache_dir=~/.cache/opencode-dockerized
+
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
 # Examples:
@@ -563,6 +625,7 @@ load_config() {
     LLM_INTERCEPTOR_CAPTURE_LOCAL=false
     GRAPHIFY_SUPPORT=true
     MATT_POCOCK_SKILLS_SUPPORT=false
+    SBT_CACHE_SUPPORT=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ "$key" =~ ^[[:space:]]*setting\. ]] || continue
@@ -576,6 +639,11 @@ load_config() {
         # Opt-out setting: enabled unless explicitly disabled with =false
         [[ "$key" =~ graphify_support ]] && [[ "$value" == "false" ]] && GRAPHIFY_SUPPORT=false
         [[ "$key" =~ matt_pocock_skills_support ]] && [[ "$value" == "true" ]] && MATT_POCOCK_SKILLS_SUPPORT=true
+        [[ "$key" =~ sbt_cache_support ]] && [[ "$value" == "true" ]] && SBT_CACHE_SUPPORT=true
+        # Expand a leading ~ the same way custom mounts do; an empty value keeps the default
+        if [[ "$key" =~ sbt_cache_dir ]] && [ -n "$value" ]; then
+            SBT_CACHE_DIR="${value/#\~/$HOME}"
+        fi
     done < "$CONFIG_FILE"
 
     return 0
@@ -615,6 +683,12 @@ save_config() {
         echo "# globally. Run /setup-matt-pocock-skills once per repository."
         echo "# See: https://github.com/mattpocock/skills"
         echo "setting.matt_pocock_skills_support=$MATT_POCOCK_SKILLS_SUPPORT"
+        echo ""
+        echo "# sbt / Coursier / Ivy caches: a private copy, seeded from the host on first use,"
+        echo "# so sbt does not start cold in every --rm container. The host's own caches are"
+        echo "# never exposed. Manage with './opencode-dockerized.sh sbt-cache [seed|status|reset]'."
+        echo "setting.sbt_cache_support=$SBT_CACHE_SUPPORT"
+        echo "setting.sbt_cache_dir=$SBT_CACHE_DIR"
         echo ""
         echo "# Custom volume mounts (read-only by default)"
         echo "# Format: mount.<name>=<host_path>:<container_path>[:rw]"
@@ -1120,6 +1194,43 @@ prompt_matt_pocock_skills_support() {
     fi
 }
 
+# Interactive prompt for the private sbt/Coursier/Ivy cache copy
+# SBT_CACHE_SUPPORT defaults to false, so the question is phrased as an opt-in
+prompt_sbt_cache_support() {
+    echo ""
+    config_info "sbt / Coursier / Ivy caches (Scala projects)"
+
+    if [ "$SBT_CACHE_SUPPORT" = true ]; then
+        config_success "The private sbt cache is currently enabled (in $SBT_CACHE_DIR)"
+        read -r -p "Keep it enabled? (Y/n): " sbt_cache
+        if [[ "$sbt_cache" =~ ^[Nn]$ ]]; then
+            SBT_CACHE_SUPPORT=false
+            config_info "Private sbt cache disabled"
+        else
+            config_success "Private sbt cache remains enabled"
+        fi
+    else
+        echo "Containers use --rm, so sbt starts cold on every run: it re-boots, re-resolves"
+        echo "dependencies and recompiles the compiler bridge. When enabled, a private copy"
+        echo "of ~/.sbt, the Coursier cache and ~/.ivy2 is kept in $SBT_CACHE_DIR,"
+        echo "seeded from the host on first use. The host's own caches are never exposed."
+        echo ""
+
+        read -r -p "Enable the private sbt cache? (y/N): " sbt_cache
+        if [[ "$sbt_cache" =~ ^[Yy]$ ]]; then
+            SBT_CACHE_SUPPORT=true
+            config_success "Private sbt cache enabled"
+            read -r -p "Cache directory [$SBT_CACHE_DIR]: " sbt_cache_dir
+            if [ -n "$sbt_cache_dir" ]; then
+                SBT_CACHE_DIR="${sbt_cache_dir/#\~/$HOME}"
+            fi
+        else
+            SBT_CACHE_SUPPORT=false
+            config_info "Private sbt cache disabled"
+        fi
+    fi
+}
+
 # Print current configuration (for debugging/info)
 print_config() {
     echo ""
@@ -1129,6 +1240,7 @@ print_config() {
     echo "  LLM interception: $LLM_INTERCEPTOR_SUPPORT (port $LLM_INTERCEPTOR_PORT, capture_local $LLM_INTERCEPTOR_CAPTURE_LOCAL)"
     echo "  Graphify support: $GRAPHIFY_SUPPORT"
     echo "  Matt Pocock skills: $MATT_POCOCK_SKILLS_SUPPORT"
+    echo "  Private sbt cache: $SBT_CACHE_SUPPORT ($SBT_CACHE_DIR)"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
         echo ""
@@ -1175,6 +1287,7 @@ interactive_config_setup() {
             prompt_llm_interceptor_support
             prompt_graphify_support
             prompt_matt_pocock_skills_support
+            prompt_sbt_cache_support
             prompt_custom_mounts
             prompt_env_vars
             save_config
@@ -1187,9 +1300,10 @@ interactive_config_setup() {
                 prompt_llm_interceptor_support
                 prompt_graphify_support
                 prompt_matt_pocock_skills_support
+                prompt_sbt_cache_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ] || [ "$SBT_CACHE_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

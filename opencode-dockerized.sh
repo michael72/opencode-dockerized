@@ -317,6 +317,60 @@ clean_image() {
     fi
 }
 
+# Manage the private sbt/Coursier/Ivy cache copy (see setting.sbt_cache_support)
+# Usage: manage_sbt_cache [status|seed|reset]
+manage_sbt_cache() {
+    local subcommand="${1:-status}"
+    local name
+
+    parse_config
+
+    case "$subcommand" in
+        status)
+            print_info "Private sbt cache: $SBT_CACHE_SUPPORT (setting.sbt_cache_support)"
+            print_info "Cache directory:   $SBT_CACHE_DIR (setting.sbt_cache_dir)"
+            for name in sbt coursier ivy2; do
+                if [ -d "$SBT_CACHE_DIR/$name" ]; then
+                    echo "  $name: $(du -sh "$SBT_CACHE_DIR/$name" 2>/dev/null | cut -f1)"
+                else
+                    echo "  $name: (not created yet)"
+                fi
+            done
+            if [ "$SBT_CACHE_SUPPORT" != true ]; then
+                print_warning "Not mounted: set setting.sbt_cache_support=true (run '$0 config edit')"
+            fi
+            ;;
+        seed)
+            # Pre-warms the copy from the host; directories that already exist are kept
+            ensure_sbt_cache_dirs
+            print_success "sbt cache ready in $SBT_CACHE_DIR"
+            ;;
+        reset)
+            # Only the three directories this feature owns are removed, never the parent
+            if [ -z "$SBT_CACHE_DIR" ] || [ "$SBT_CACHE_DIR" = "/" ] || [ "$SBT_CACHE_DIR" = "$HOME" ]; then
+                print_error "Refusing to reset unsafe cache directory: '$SBT_CACHE_DIR'"
+                exit 1
+            fi
+            local answer
+            read -r -p "Delete $SBT_CACHE_DIR/{sbt,coursier,ivy2} and re-copy from the host? (y/N): " answer
+            if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+                print_info "Aborted"
+                return 0
+            fi
+            for name in sbt coursier ivy2; do
+                rm -rf "${SBT_CACHE_DIR:?}/$name"
+            done
+            ensure_sbt_cache_dirs
+            print_success "sbt cache reset in $SBT_CACHE_DIR"
+            ;;
+        *)
+            print_error "Unknown sbt-cache subcommand: $subcommand"
+            echo "Usage: $0 sbt-cache [status|seed|reset]"
+            exit 1
+            ;;
+    esac
+}
+
 # Function to show or edit configuration
 show_config() {
     local subcommand="${1:-show}"
@@ -369,6 +423,7 @@ Commands:
     update              Update OpenCode to the latest version
     version             Show OpenCode version in the container
     config [show|edit|path]  Show, edit, or print config file path
+    sbt-cache [status|seed|reset]  Manage the private sbt/Coursier/Ivy cache copy
     clean               Remove the Docker image
     help                Show this help message
 
@@ -389,7 +444,8 @@ Examples:
     $0 update                       # Update OpenCode to latest version
     $0 config show                  # Show current configuration
     $0 config edit                  # Edit config in \$EDITOR
-    $0 clean                        # Remove Docker image
+    $0 sbt-cache seed               # Pre-copy ~/.sbt, Coursier and Ivy caches
+    $0 clean                       # Remove Docker image
     DRY_RUN=true $0 run             # Show Docker command without running
 
 Getting Started:
@@ -462,6 +518,9 @@ main() {
             ;;
         config)
             show_config "$@"
+            ;;
+        sbt-cache)
+            manage_sbt_cache "$@"
             ;;
         clean)
             clean_image

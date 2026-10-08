@@ -36,6 +36,17 @@
 #
 # setting.matt_pocock_skills_support=true
 
+# sbt / Coursier / Ivy caches (Scala projects)
+# Containers use --rm, so sbt would otherwise start cold on every run (boot dir,
+# dependency resolution, compiler bridge). When enabled, a private copy of ~/.sbt,
+# the Coursier cache and ~/.ivy2 lives in sbt_cache_dir, is seeded from the host on
+# first use and mounted read-write. The host's own caches are never exposed, so the
+# container cannot plant a global sbt plugin or a tampered jar that the host would run.
+# Manage it with: opencode-dockerized.sh sbt-cache [status|seed|reset]
+#
+# setting.sbt_cache_support=true
+# setting.sbt_cache_dir=~/.cache/opencode-dockerized
+
 # ============================================
 # Custom Volume Mounts
 # ============================================

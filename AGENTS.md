@@ -33,6 +33,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 ./opencode-dockerized.sh config show    # Show parsed configuration
 ./opencode-dockerized.sh config edit    # Edit config in $EDITOR
 ./opencode-dockerized.sh config path    # Print config file path
+./opencode-dockerized.sh sbt-cache [status|seed|reset]  # Manage the private sbt/Coursier/Ivy cache copy
 ./opencode-dockerized.sh clean          # Remove Docker image
 ./opencode-dockerized.sh help           # Show help
 DRY_RUN=true ./opencode-dockerized.sh run  # Print docker command without running
@@ -163,6 +164,8 @@ setting.llm_interceptor_port=9090
 setting.llm_interceptor_capture_local=false
 setting.graphify_support=true
 setting.matt_pocock_skills_support=false
+setting.sbt_cache_support=false
+setting.sbt_cache_dir=~/.cache/opencode-dockerized
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 ```
@@ -215,4 +218,7 @@ acts on also need an `-e` entry in `build_common_docker_args`.
 | `~/.bun/install/cache/` | `/home/coder/.bun/install/cache/` | rw | Bun install cache |
 | `~/.claude/` | `/home/coder/.claude/` | ro | Claude Code compat: CLAUDE.md rules, skills/ |
 | `~/.agents/` | `/home/coder/.agents/` | ro | Agent-compatible skills (skills/<name>/SKILL.md). With `setting.matt_pocock_skills_support` on, each `~/.agents/skills/<name>/` is mounted ro individually instead, so the entrypoint can add the staged skills next to them (a host skill of the same name wins) |
+| `$SBT_CACHE_DIR/sbt` | `/home/coder/.sbt` | rw | With `setting.sbt_cache_support`: private copy of the host's `~/.sbt`, seeded on first use (never the host's own directory) |
+| `$SBT_CACHE_DIR/coursier` | `/home/coder/.cache/coursier` | rw | Same setting: private copy of the Coursier cache |
+| `$SBT_CACHE_DIR/ivy2` | `/home/coder/.ivy2` | rw | Same setting: private copy of `~/.ivy2`. `SBT_CACHE_DIR` defaults to `~/.cache/opencode-dockerized` (`setting.sbt_cache_dir`) |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | rw | Docker socket |
