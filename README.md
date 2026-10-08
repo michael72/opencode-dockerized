@@ -509,7 +509,10 @@ setting.sbt_cache_support=true
 setting.sbt_cache_dir=~/.cache/opencode-dockerized   # optional, this is the default
 ```
 
-or answer "y" when `./setup.sh` asks. On first use `~/.sbt`, the Coursier cache
+or answer "y" when `./setup.sh` asks. The setting is global, but the mounts are only added for
+sbt projects: the project directory must contain `build.sbt` (or any other `*.sbt` file) or
+`project/build.properties`. Other projects are left alone and never trigger the first-use copy
+below. On the first sbt session, `~/.sbt`, the Coursier cache
 (`~/.cache/coursier`, or `~/Library/Caches/Coursier` on macOS) and `~/.ivy2` are copied into
 `sbt/`, `coursier/` and `ivy2/` below `sbt_cache_dir` and mounted read-write at
 `/home/coder/.sbt`, `/home/coder/.cache/coursier` and `/home/coder/.ivy2`. Nothing is ever

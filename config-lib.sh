@@ -137,6 +137,22 @@ seed_cache_dir() {
     mkdir -p "$dst" 2>/dev/null || true
 }
 
+# Succeeds when the directory is the root of an sbt build. Only that directory is
+# looked at: it is also all the container gets to see, so a build file in a parent
+# is out of sbt's reach anyway.
+# Usage: is_sbt_project "/path/to/project"
+is_sbt_project() {
+    local dir="$1"
+    local sbt_file
+
+    [ -n "$dir" ] || return 1
+    [ -f "$dir/project/build.properties" ] && return 0
+    for sbt_file in "$dir"/*.sbt; do
+        [ -f "$sbt_file" ] && return 0
+    done
+    return 1
+}
+
 # Create the container-private sbt, Coursier and Ivy caches under $SBT_CACHE_DIR.
 # They are copies, so whatever the container writes (including a tampered jar or a
 # global sbt plugin) never reaches the host's own ~/.sbt or Coursier cache.
@@ -475,8 +491,9 @@ build_standard_volume_args() {
 
     # sbt, Coursier and Ivy caches (opt-in) — a private, persistent copy of the host's,
     # so sbt does not start cold in every --rm container and the host's own caches
-    # stay out of the container's reach
-    if [ "$SBT_CACHE_SUPPORT" = true ]; then
+    # stay out of the container's reach. Only for sbt projects: the setting is global,
+    # and other projects should not trigger the (large) first-use copy.
+    if [ "$SBT_CACHE_SUPPORT" = true ] && is_sbt_project "$project_dir"; then
         if ensure_sbt_cache_dirs; then
             VOLUME_ARGS+=(
                 -v "$SBT_CACHE_DIR/sbt:/home/coder/.sbt"

@@ -218,7 +218,7 @@ acts on also need an `-e` entry in `build_common_docker_args`.
 | `~/.bun/install/cache/` | `/home/coder/.bun/install/cache/` | rw | Bun install cache |
 | `~/.claude/` | `/home/coder/.claude/` | ro | Claude Code compat: CLAUDE.md rules, skills/ |
 | `~/.agents/` | `/home/coder/.agents/` | ro | Agent-compatible skills (skills/<name>/SKILL.md). With `setting.matt_pocock_skills_support` on, each `~/.agents/skills/<name>/` is mounted ro individually instead, so the entrypoint can add the staged skills next to them (a host skill of the same name wins) |
-| `$SBT_CACHE_DIR/sbt` | `/home/coder/.sbt` | rw | With `setting.sbt_cache_support`: private copy of the host's `~/.sbt`, seeded on first use (never the host's own directory) |
+| `$SBT_CACHE_DIR/sbt` | `/home/coder/.sbt` | rw | With `setting.sbt_cache_support`, and only when the project is an sbt build (`is_sbt_project`): private copy of the host's `~/.sbt`, seeded on first use (never the host's own directory) |
 | `$SBT_CACHE_DIR/coursier` | `/home/coder/.cache/coursier` | rw | Same setting: private copy of the Coursier cache |
 | `$SBT_CACHE_DIR/ivy2` | `/home/coder/.ivy2` | rw | Same setting: private copy of `~/.ivy2`. `SBT_CACHE_DIR` defaults to `~/.cache/opencode-dockerized` (`setting.sbt_cache_dir`) |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | rw | Docker socket |
