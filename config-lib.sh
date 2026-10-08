@@ -152,6 +152,16 @@ ensure_sbt_cache_dirs() {
     seed_cache_dir "$HOME/.sbt" "$SBT_CACHE_DIR/sbt"
     seed_cache_dir "$coursier_src" "$SBT_CACHE_DIR/coursier"
     seed_cache_dir "$HOME/.ivy2" "$SBT_CACHE_DIR/ivy2"
+
+    # Without this check a failed mkdir goes unnoticed, and 'docker run -v' would then
+    # create the missing host path itself, root-owned and unwritable for the container
+    local name
+    for name in sbt coursier ivy2; do
+        if [ ! -d "$SBT_CACHE_DIR/$name" ] || [ ! -w "$SBT_CACHE_DIR/$name" ]; then
+            config_warning "sbt cache directory $SBT_CACHE_DIR/$name is missing or not writable"
+            return 1
+        fi
+    done
 }
 
 # Check if Docker image exists locally
@@ -467,12 +477,15 @@ build_standard_volume_args() {
     # so sbt does not start cold in every --rm container and the host's own caches
     # stay out of the container's reach
     if [ "$SBT_CACHE_SUPPORT" = true ]; then
-        ensure_sbt_cache_dirs
-        VOLUME_ARGS+=(
-            -v "$SBT_CACHE_DIR/sbt:/home/coder/.sbt"
-            -v "$SBT_CACHE_DIR/coursier:/home/coder/.cache/coursier"
-            -v "$SBT_CACHE_DIR/ivy2:/home/coder/.ivy2"
-        )
+        if ensure_sbt_cache_dirs; then
+            VOLUME_ARGS+=(
+                -v "$SBT_CACHE_DIR/sbt:/home/coder/.sbt"
+                -v "$SBT_CACHE_DIR/coursier:/home/coder/.cache/coursier"
+                -v "$SBT_CACHE_DIR/ivy2:/home/coder/.ivy2"
+            )
+        else
+            config_warning "Starting without the private sbt cache (check setting.sbt_cache_dir)"
+        fi
     fi
 
     # Git configuration (optional) — ensures commits use the host user's name and email

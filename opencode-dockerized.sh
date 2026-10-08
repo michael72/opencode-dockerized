@@ -342,7 +342,10 @@ manage_sbt_cache() {
             ;;
         seed)
             # Pre-warms the copy from the host; directories that already exist are kept
-            ensure_sbt_cache_dirs
+            if ! ensure_sbt_cache_dirs; then
+                print_error "Could not prepare the sbt cache in $SBT_CACHE_DIR"
+                exit 1
+            fi
             print_success "sbt cache ready in $SBT_CACHE_DIR"
             ;;
         reset)
@@ -360,7 +363,10 @@ manage_sbt_cache() {
             for name in sbt coursier ivy2; do
                 rm -rf "${SBT_CACHE_DIR:?}/$name"
             done
-            ensure_sbt_cache_dirs
+            if ! ensure_sbt_cache_dirs; then
+                print_error "Could not prepare the sbt cache in $SBT_CACHE_DIR"
+                exit 1
+            fi
             print_success "sbt cache reset in $SBT_CACHE_DIR"
             ;;
         *)
