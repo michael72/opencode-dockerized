@@ -19,8 +19,8 @@ _opencode_dockerized() {
         'update:Update OpenCode to the latest version'
         'version:Show OpenCode version in the container'
         'config:Show, edit, or print config file path'
-        'sbt-cache:Manage the private sbt/Coursier/Ivy cache copy'
-        'uv-cache:Manage the private uv package cache copy'
+        'sbt-cache:Manage the private sbt/Coursier/Ivy caches'
+        'uv-cache:Manage the private uv package cache'
         'clean:Remove the Docker image'
         'help:Show help message'
     )

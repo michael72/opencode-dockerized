@@ -317,7 +317,7 @@ clean_image() {
     fi
 }
 
-# Manage the private uv package cache copy (see setting.uv_cache_support)
+# Manage the private uv package cache (see setting.uv_cache_support)
 # Usage: manage_uv_cache [status|seed|reset]
 manage_uv_cache() {
     local subcommand="${1:-status}"
@@ -338,7 +338,7 @@ manage_uv_cache() {
             fi
             ;;
         seed)
-            # Pre-warms the copy from the host; an existing directory is kept
+            # Creates the directory if missing; existing contents are kept
             if ! ensure_uv_cache_dirs; then
                 print_error "Could not prepare the uv cache in $UV_PRIVATE_CACHE_DIR"
                 exit 1
@@ -346,23 +346,22 @@ manage_uv_cache() {
             print_success "uv cache ready in $UV_PRIVATE_CACHE_DIR"
             ;;
         reset)
-            # Only the uv directory this feature owns is removed, never the parent
+            # Only the uv directory this feature owns is emptied, never the parent
             if [ -z "$UV_PRIVATE_CACHE_DIR" ] || [ "$UV_PRIVATE_CACHE_DIR" = "/" ] || [ "$UV_PRIVATE_CACHE_DIR" = "$HOME" ]; then
                 print_error "Refusing to reset unsafe cache directory: '$UV_PRIVATE_CACHE_DIR'"
                 exit 1
             fi
             local answer
-            read -r -p "Delete $UV_PRIVATE_CACHE_DIR/uv and re-copy from the host? (y/N): " answer
+            read -r -p "Empty $UV_PRIVATE_CACHE_DIR/uv? (y/N): " answer
             if [[ ! "$answer" =~ ^[Yy]$ ]]; then
                 print_info "Aborted"
                 return 0
             fi
-            rm -rf "${UV_PRIVATE_CACHE_DIR:?}/uv"
-            if ! ensure_uv_cache_dirs; then
-                print_error "Could not prepare the uv cache in $UV_PRIVATE_CACHE_DIR"
+            if ! clear_cache_dir "$UV_PRIVATE_CACHE_DIR/uv"; then
+                print_error "Could not empty the uv cache in $UV_PRIVATE_CACHE_DIR"
                 exit 1
             fi
-            print_success "uv cache reset in $UV_PRIVATE_CACHE_DIR"
+            print_success "uv cache emptied in $UV_PRIVATE_CACHE_DIR"
             ;;
         *)
             print_error "Unknown uv-cache subcommand: $subcommand"
@@ -372,7 +371,7 @@ manage_uv_cache() {
     esac
 }
 
-# Manage the private sbt/Coursier/Ivy cache copy (see setting.sbt_cache_support)
+# Manage the private sbt/Coursier/Ivy caches (see setting.sbt_cache_support)
 # Usage: manage_sbt_cache [status|seed|reset]
 manage_sbt_cache() {
     local subcommand="${1:-status}"
@@ -396,7 +395,7 @@ manage_sbt_cache() {
             fi
             ;;
         seed)
-            # Pre-warms the copy from the host; directories that already exist are kept
+            # Creates the directories if missing; existing contents are kept
             if ! ensure_sbt_cache_dirs; then
                 print_error "Could not prepare the sbt cache in $SBT_CACHE_DIR"
                 exit 1
@@ -404,25 +403,24 @@ manage_sbt_cache() {
             print_success "sbt cache ready in $SBT_CACHE_DIR"
             ;;
         reset)
-            # Only the three directories this feature owns are removed, never the parent
+            # Only the three directories this feature owns are emptied, never the parent
             if [ -z "$SBT_CACHE_DIR" ] || [ "$SBT_CACHE_DIR" = "/" ] || [ "$SBT_CACHE_DIR" = "$HOME" ]; then
                 print_error "Refusing to reset unsafe cache directory: '$SBT_CACHE_DIR'"
                 exit 1
             fi
             local answer
-            read -r -p "Delete $SBT_CACHE_DIR/{sbt,coursier,ivy2} and re-copy from the host? (y/N): " answer
+            read -r -p "Empty $SBT_CACHE_DIR/{sbt,coursier,ivy2}? (y/N): " answer
             if [[ ! "$answer" =~ ^[Yy]$ ]]; then
                 print_info "Aborted"
                 return 0
             fi
             for name in sbt coursier ivy2; do
-                rm -rf "${SBT_CACHE_DIR:?}/$name"
+                if ! clear_cache_dir "$SBT_CACHE_DIR/$name"; then
+                    print_error "Could not empty $SBT_CACHE_DIR/$name"
+                    exit 1
+                fi
             done
-            if ! ensure_sbt_cache_dirs; then
-                print_error "Could not prepare the sbt cache in $SBT_CACHE_DIR"
-                exit 1
-            fi
-            print_success "sbt cache reset in $SBT_CACHE_DIR"
+            print_success "sbt cache emptied in $SBT_CACHE_DIR"
             ;;
         *)
             print_error "Unknown sbt-cache subcommand: $subcommand"
@@ -484,8 +482,8 @@ Commands:
     update              Update OpenCode to the latest version
     version             Show OpenCode version in the container
     config [show|edit|path]  Show, edit, or print config file path
-    sbt-cache [status|seed|reset]  Manage the private sbt/Coursier/Ivy cache copy
-    uv-cache [status|seed|reset]   Manage the private uv package cache copy
+    sbt-cache [status|seed|reset]  Manage the private sbt/Coursier/Ivy caches
+    uv-cache [status|seed|reset]   Manage the private uv package cache
     clean               Remove the Docker image
     help                Show this help message
 
@@ -506,8 +504,8 @@ Examples:
     $0 update                       # Update OpenCode to latest version
     $0 config show                  # Show current configuration
     $0 config edit                  # Edit config in \$EDITOR
-    $0 sbt-cache seed               # Pre-copy ~/.sbt, Coursier and Ivy caches
-    $0 uv-cache seed                # Pre-copy the uv package cache
+    $0 sbt-cache seed               # Create the private sbt, Coursier and Ivy cache directories
+    $0 uv-cache seed                # Create the private uv cache directory
     $0 clean                       # Remove Docker image
     DRY_RUN=true $0 run             # Show Docker command without running
 

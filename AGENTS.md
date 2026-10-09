@@ -33,8 +33,8 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 ./opencode-dockerized.sh config show    # Show parsed configuration
 ./opencode-dockerized.sh config edit    # Edit config in $EDITOR
 ./opencode-dockerized.sh config path    # Print config file path
-./opencode-dockerized.sh sbt-cache [status|seed|reset]  # Manage the private sbt/Coursier/Ivy cache copy
-./opencode-dockerized.sh uv-cache [status|seed|reset]   # Manage the private uv package cache copy
+./opencode-dockerized.sh sbt-cache [status|seed|reset]  # Manage the private sbt/Coursier/Ivy caches
+./opencode-dockerized.sh uv-cache [status|seed|reset]   # Manage the private uv package cache
 ./opencode-dockerized.sh clean          # Remove Docker image
 ./opencode-dockerized.sh help           # Show help
 DRY_RUN=true ./opencode-dockerized.sh run  # Print docker command without running
@@ -221,8 +221,8 @@ acts on also need an `-e` entry in `build_common_docker_args`.
 | `~/.bun/install/cache/` | `/home/coder/.bun/install/cache/` | rw | Bun install cache |
 | `~/.claude/` | `/home/coder/.claude/` | ro | Claude Code compat: CLAUDE.md rules, skills/ |
 | `~/.agents/` | `/home/coder/.agents/` | ro | Agent-compatible skills (skills/<name>/SKILL.md). With `setting.matt_pocock_skills_support` on, each `~/.agents/skills/<name>/` is mounted ro individually instead, so the entrypoint can add the staged skills next to them (a host skill of the same name wins) |
-| `$SBT_CACHE_DIR/sbt` | `/home/coder/.sbt` | rw | With `setting.sbt_cache_support`, and only when the project is an sbt build (`is_sbt_project`): private copy of the host's `~/.sbt`, seeded on first use (never the host's own directory) |
-| `$SBT_CACHE_DIR/coursier` | `/home/coder/.cache/coursier` | rw | Same setting: private copy of the Coursier cache |
-| `$SBT_CACHE_DIR/ivy2` | `/home/coder/.ivy2` | rw | Same setting: private copy of `~/.ivy2`. `SBT_CACHE_DIR` defaults to `~/.cache/opencode-dockerized` (`setting.sbt_cache_dir`) |
-| `$UV_PRIVATE_CACHE_DIR/uv` | `/home/coder/.cache/uv` | rw | With `setting.uv_cache_support`, and only when the project is a Python project (`is_python_project`): private copy of the host's uv cache, seeded on first use (never the host's own directory). Also sets `UV_LINK_MODE=copy`. `UV_PRIVATE_CACHE_DIR` defaults to `~/.cache/opencode-dockerized` (`setting.uv_cache_dir`); the interpreters/tools in the image's `~/.local/share/uv` are not touched |
+| `$SBT_CACHE_DIR/sbt` | `/home/coder/.sbt` | rw | With `setting.sbt_cache_support`, and only when the project is an sbt build (`is_sbt_project`): private `~/.sbt` that starts empty (never the host's own directory, nothing is copied from it) |
+| `$SBT_CACHE_DIR/coursier` | `/home/coder/.cache/coursier` | rw | Same setting: private, initially empty Coursier cache |
+| `$SBT_CACHE_DIR/ivy2` | `/home/coder/.ivy2` | rw | Same setting: private, initially empty `~/.ivy2`. `SBT_CACHE_DIR` defaults to `~/.cache/opencode-dockerized` (`setting.sbt_cache_dir`) |
+| `$UV_PRIVATE_CACHE_DIR/uv` | `/home/coder/.cache/uv` | rw | With `setting.uv_cache_support`, and only when the project is a Python project (`is_python_project`): private uv cache that starts empty (never the host's own directory, nothing is copied from it). Also sets `UV_LINK_MODE=copy`. `UV_PRIVATE_CACHE_DIR` defaults to `~/.cache/opencode-dockerized` (`setting.uv_cache_dir`); the interpreters/tools in the image's `~/.local/share/uv` are not touched |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | rw | Docker socket |
