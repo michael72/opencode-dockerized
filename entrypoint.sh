@@ -438,6 +438,22 @@ if [ "${LLM_INTERCEPTOR_SUPPORT:-false}" = "true" ]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# sbt server (opt-in via setting.sbt_server_support)
+#
+# The 'sbt' in the image is a shim (sbt-shim.sh) that forwards 'sbt <task>' to a
+# resident sbt server through the thin client. Start that server in the background
+# now, so it is already up when the agent runs its first sbt command. The shim does
+# nothing in a directory that is not an sbt build, and a concurrent first call from
+# the agent waits for this start instead of racing it. The server lives and dies
+# with the container. Log: /tmp/ocd-sbt-server-*.log (progress: /tmp/ocd-sbt-warmup.log).
+# ---------------------------------------------------------------------------
+if [ "${SBT_SERVER_SUPPORT:-false}" = "true" ]; then
+    setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
+        bash -c "source /home/coder/.sdkman/bin/sdkman-init.sh 2>/dev/null || true; cd \"\$1\" && exec sbt --ocd-warmup" \
+        -- "$WORKDIR" </dev/null >/tmp/ocd-sbt-warmup.log 2>&1 &
+fi
+
 # start local plantuml server to use with `pumlcli`
 pumlsrv-server &
 

@@ -82,6 +82,7 @@ GRAPHIFY_SUPPORT=true            # Boolean flag for the per-project graphify kno
 MATT_POCOCK_SKILLS_SUPPORT=false # Boolean flag for Matt Pocock's agent skills (~/.agents/skills)
 SBT_CACHE_SUPPORT=false          # Boolean flag for container-private sbt/Coursier/Ivy caches
 : "${SBT_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding them (sbt/, coursier/, ivy2/)
+SBT_SERVER_SUPPORT=false         # Boolean flag for a resident sbt server behind 'sbt' (thin client shim)
 UV_CACHE_SUPPORT=false           # Boolean flag for a container-private uv package cache
 # Not called UV_CACHE_DIR: that is uv's own variable and would be picked up from the host's environment
 : "${UV_PRIVATE_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding it (uv/)
@@ -386,6 +387,7 @@ build_common_docker_args() {
         -e "PRIVATE_SERVER_HOST=$PRIVATE_SERVER_HOST"
         -e "GRAPHIFY_SUPPORT=$GRAPHIFY_SUPPORT"
         -e "MATT_POCOCK_SKILLS_SUPPORT=$MATT_POCOCK_SKILLS_SUPPORT"
+        -e "SBT_SERVER_SUPPORT=$SBT_SERVER_SUPPORT"
     )
 
     # Pass terminal identification variables so applications inside the container
@@ -641,6 +643,16 @@ init_config_file() {
 # setting.sbt_cache_support=false
 # setting.sbt_cache_dir=~/.cache/opencode-dockerized
 
+# Resident sbt server (for Scala projects)
+# Every 'sbt <task>' otherwise boots a JVM and loads the build from scratch, which often
+# takes longer than the compile or test run itself. When enabled, 'sbt' in the container
+# forwards to an sbt server (sbt's thin client, sbt 1.4+) that is started at container
+# start and stays up for the session: 'sbt "testOnly *MyTests*"' sends that command to
+# the server and prints its output. Options (-J-Xmx.., -D..), a bare 'sbt' and non-sbt
+# directories still run the real sbt; SBT_NO_CLIENT=1 bypasses it. Memory: put -Xmx in
+# the project's .jvmopts. Edits to build.sbt need a 'reload'.
+# setting.sbt_server_support=false
+
 # uv package cache (for Python projects)
 # Containers use --rm, so uv would otherwise download every wheel again on each run.
 # When enabled, a private uv cache is kept in uv_cache_dir, starts empty (nothing is
@@ -706,6 +718,7 @@ load_config() {
     GRAPHIFY_SUPPORT=true
     MATT_POCOCK_SKILLS_SUPPORT=false
     SBT_CACHE_SUPPORT=false
+    SBT_SERVER_SUPPORT=false
     UV_CACHE_SUPPORT=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
@@ -725,6 +738,7 @@ load_config() {
         if [[ "$key" =~ sbt_cache_dir ]] && [ -n "$value" ]; then
             SBT_CACHE_DIR="${value/#\~/$HOME}"
         fi
+        [[ "$key" =~ sbt_server_support ]] && [[ "$value" == "true" ]] && SBT_SERVER_SUPPORT=true
         [[ "$key" =~ uv_cache_support ]] && [[ "$value" == "true" ]] && UV_CACHE_SUPPORT=true
         if [[ "$key" =~ uv_cache_dir ]] && [ -n "$value" ]; then
             UV_PRIVATE_CACHE_DIR="${value/#\~/$HOME}"
@@ -774,6 +788,11 @@ save_config() {
         echo "# never exposed. Manage with './opencode-dockerized.sh sbt-cache [seed|status|reset]'."
         echo "setting.sbt_cache_support=$SBT_CACHE_SUPPORT"
         echo "setting.sbt_cache_dir=$SBT_CACHE_DIR"
+        echo ""
+        echo "# Resident sbt server: 'sbt <task>' in the container is forwarded to an sbt server"
+        echo "# (thin client, sbt 1.4+) started at container start, instead of booting a JVM"
+        echo "# for every call. Options, a bare 'sbt' and SBT_NO_CLIENT=1 run the real sbt."
+        echo "setting.sbt_server_support=$SBT_SERVER_SUPPORT"
         echo ""
         echo "# uv package cache: a private, initially empty directory, so uv does not"
         echo "# download every wheel again in each --rm container. The host's own cache is"
@@ -1322,6 +1341,39 @@ prompt_sbt_cache_support() {
     fi
 }
 
+# Interactive prompt for the resident sbt server
+# SBT_SERVER_SUPPORT defaults to false, so the question is phrased as an opt-in
+prompt_sbt_server_support() {
+    echo ""
+    config_info "Resident sbt server (Scala projects)"
+
+    if [ "$SBT_SERVER_SUPPORT" = true ]; then
+        config_success "The resident sbt server is currently enabled"
+        read -r -p "Keep it enabled? (Y/n): " sbt_server
+        if [[ "$sbt_server" =~ ^[Nn]$ ]]; then
+            SBT_SERVER_SUPPORT=false
+            config_info "Resident sbt server disabled"
+        else
+            config_success "Resident sbt server remains enabled"
+        fi
+    else
+        echo "Every 'sbt <task>' boots a JVM and loads the build from scratch, which often takes"
+        echo "longer than the compile or test run itself. When enabled, 'sbt' in the container"
+        echo "forwards to an sbt server (thin client, sbt 1.4+) that starts with the container"
+        echo "and stays up for the session. It keeps one JVM resident; put -Xmx in .jvmopts."
+        echo ""
+
+        read -r -p "Enable the resident sbt server? (y/N): " sbt_server
+        if [[ "$sbt_server" =~ ^[Yy]$ ]]; then
+            SBT_SERVER_SUPPORT=true
+            config_success "Resident sbt server enabled"
+        else
+            SBT_SERVER_SUPPORT=false
+            config_info "Resident sbt server disabled"
+        fi
+    fi
+}
+
 # Interactive prompt for the private uv package cache
 # UV_CACHE_SUPPORT defaults to false, so the question is phrased as an opt-in
 prompt_uv_cache_support() {
@@ -1368,6 +1420,7 @@ print_config() {
     echo "  Graphify support: $GRAPHIFY_SUPPORT"
     echo "  Matt Pocock skills: $MATT_POCOCK_SKILLS_SUPPORT"
     echo "  Private sbt cache: $SBT_CACHE_SUPPORT ($SBT_CACHE_DIR)"
+    echo "  Resident sbt server: $SBT_SERVER_SUPPORT"
     echo "  Private uv cache: $UV_CACHE_SUPPORT ($UV_PRIVATE_CACHE_DIR)"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
@@ -1416,6 +1469,7 @@ interactive_config_setup() {
             prompt_graphify_support
             prompt_matt_pocock_skills_support
             prompt_sbt_cache_support
+            prompt_sbt_server_support
             prompt_uv_cache_support
             prompt_custom_mounts
             prompt_env_vars
@@ -1430,10 +1484,11 @@ interactive_config_setup() {
                 prompt_graphify_support
                 prompt_matt_pocock_skills_support
                 prompt_sbt_cache_support
+                prompt_sbt_server_support
                 prompt_uv_cache_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ] || [ "$SBT_CACHE_SUPPORT" = true ] || [ "$UV_CACHE_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$LLM_INTERCEPTOR_SUPPORT" = true ] || [ "$GRAPHIFY_SUPPORT" != true ] || [ "$MATT_POCOCK_SKILLS_SUPPORT" = true ] || [ "$SBT_CACHE_SUPPORT" = true ] || [ "$SBT_SERVER_SUPPORT" = true ] || [ "$UV_CACHE_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

@@ -297,6 +297,7 @@ setting.graphify_support=true
 setting.matt_pocock_skills_support=false
 setting.sbt_cache_support=false
 setting.sbt_cache_dir=~/.cache/opencode-dockerized
+setting.sbt_server_support=false
 setting.uv_cache_support=false
 setting.uv_cache_dir=~/.cache/opencode-dockerized
 
@@ -536,6 +537,47 @@ Things to know:
   are. Run `sbt-cache reset` to empty them.
 - This does not change the project's shared `target/` directory. If the container's JDK
   (Temurin 21) differs from the host's, Zinc may still recompile when you switch sides.
+
+### Resident sbt Server (Scala projects)
+
+An agent runs `sbt` over and over, and each call boots a JVM and loads the build from scratch,
+which often takes longer than the compile or test run itself (the caches above only save the
+downloads). This opt-in setting puts a shim in front of `sbt` that forwards to a **resident sbt
+server** through sbt's thin client (`sbt --client`, sbt 1.4+):
+
+```ini
+setting.sbt_server_support=true
+```
+
+or answer "y" when `./setup.sh` asks. In an sbt project the container starts the server in the
+background at launch; afterwards:
+
+```bash
+sbt "testOnly *MyTests*"     # -> sbt --client "testOnly *MyTests*": sent to the server, output and exit code come back
+sbt testOnly *MyTests*       # several words of one command are joined, so this works unquoted too
+sbt clean test               # several commands run one after the other and stop at the first failure
+```
+
+The server lives and dies with the container. Only the first call in a session pays the start-up
+cost; if it arrives while the background start is still running it waits for it. Parallel calls
+are fine, the server queues them.
+
+Things to know:
+
+- These run the real sbt, as before: a bare `sbt` (interactive shell), any option (`-J-Xmx..`,
+  `-Dkey=value`, `--version`; a running server cannot take JVM or launcher flags), `sbt new`,
+  `shell` and `console*`, directories that are not an sbt build, and sbt older than 1.4. Set
+  `SBT_NO_CLIENT=1` to bypass the shim for a single call. `sbt shutdown` stops the server; the
+  next call starts a new one.
+- A running server does not notice edits to `build.sbt` or `project/*.sbt` by itself. Run
+  `sbt reload`, or add `Global / onChangedBuildSource := ReloadOnSourceChanges` to the build.
+- The server is one extra resident JVM per session. Limit its heap with `-Xmx` in the project's
+  `.jvmopts` (or `.sbtopts`); that file is read when the server starts.
+- Start-up output goes to `/tmp/ocd-sbt-server-*.log` inside the container, the background
+  start's own to `/tmp/ocd-sbt-warmup.log`.
+- sbt keeps a `project/target/active.json` in the project directory pointing at the running server.
+  It is not removed when the container stops; sbt treats it as stale and starts a new server.
+- The shim is installed in the image: run `./opencode-dockerized.sh build` once after upgrading.
 
 ### Private uv Cache (Python projects)
 

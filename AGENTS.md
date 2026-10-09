@@ -9,6 +9,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
 - `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode V2 (`@opencode/cli`)). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` and writes `.opencode/command/*.md` wrappers for the user-invoked ones when `setting.matt_pocock_skills_support` is on
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
+- `sbt-shim.sh` — Installed by the Dockerfile as SDKMAN's `bin/sbt` (the original moves to `bin/sbt.real`). Inert unless `SBT_SERVER_SUPPORT=true` (`setting.sbt_server_support`); then `sbt <task>` becomes `sbt.real --client <task>` against a resident server that `entrypoint.sh` pre-starts via `sbt --ocd-warmup`. Options, bare `sbt` and non-sbt directories pass through to the real sbt
 - `setup.sh` — First-time config directory initialization
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
 - `config.example` — Example user config (INI-style), in `examples/`
@@ -167,6 +168,7 @@ setting.graphify_support=true
 setting.matt_pocock_skills_support=false
 setting.sbt_cache_support=false
 setting.sbt_cache_dir=~/.cache/opencode-dockerized
+setting.sbt_server_support=false
 setting.uv_cache_support=false
 setting.uv_cache_dir=~/.cache/opencode-dockerized
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig

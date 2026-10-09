@@ -161,6 +161,15 @@ WORKDIR /
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# sbt shim (inert unless setting.sbt_server_support is on): replaces SDKMAN's launcher,
+# which is kept next to it as sbt.real, so it wins whatever order PATH has. Placed last
+# so editing it does not invalidate the expensive layers above.
+COPY sbt-shim.sh /tmp/sbt-shim.sh
+RUN sbt_bin_dir="$(dirname "$(readlink -f /home/coder/.sdkman/candidates/sbt/current/bin/sbt)")" && \
+    mv "$sbt_bin_dir/sbt" "$sbt_bin_dir/sbt.real" && \
+    install -m 0755 /tmp/sbt-shim.sh "$sbt_bin_dir/sbt" && \
+    rm /tmp/sbt-shim.sh
+
 # Set the entrypoint (runs as root, then switches to coder)
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 

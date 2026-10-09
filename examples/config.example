@@ -49,6 +49,17 @@
 # setting.sbt_cache_support=true
 # setting.sbt_cache_dir=~/.cache/opencode-dockerized
 
+# Resident sbt server (Scala projects)
+# Every 'sbt <task>' otherwise boots a JVM and loads the build from scratch, which often
+# takes longer than the compile or test run itself. When enabled, 'sbt' in the container
+# forwards to an sbt server (thin client, sbt 1.4+) started in the background at container
+# start: sbt "testOnly *MyTests*" sends that command to the server and prints its output.
+# A bare 'sbt', any option (-J-Xmx.., -D..), and non-sbt directories still run the real sbt;
+# SBT_NO_CLIENT=1 bypasses it. Limit the server's heap with -Xmx in the project's .jvmopts.
+# Edits to build.sbt need an 'sbt reload'. Needs the image rebuilt once ('build').
+#
+# setting.sbt_server_support=true
+
 # uv package cache (Python projects)
 # Containers use --rm, so uv would otherwise download every wheel again on each run.
 # When enabled, a private uv cache lives in uv_cache_dir, starts empty (nothing is
