@@ -94,6 +94,8 @@ opencode-dockerized update
 
 The `setup.sh` script offers to install `opencode-dockerized` globally by creating a symlink in `~/.local/bin`. This means you can run `opencode-dockerized` from any directory without navigating to the project first.
 
+See [SETUP.md](SETUP.md) for every choice `setup.sh` offers and the security implications of each.
+
 If you skipped global installation during setup, you can do it manually:
 
 ```bash
