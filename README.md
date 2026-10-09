@@ -504,7 +504,7 @@ Containers run with `--rm`, so sbt would start cold on every launch: it re-boots
 dependencies and recompiles the Zinc compiler bridge, which can add tens of seconds before the
 first `sbt test` even starts. Mounting your host's `~/.sbt` read-write would fix that, but then
 the container could plant a global sbt plugin or a tampered jar that your host sbt later runs.
-This opt-in setting keeps a **private copy** instead:
+This opt-in setting keeps **private, initially empty cache directories** instead:
 
 ```ini
 setting.sbt_cache_support=true
@@ -513,25 +513,27 @@ setting.sbt_cache_dir=~/.cache/opencode-dockerized   # optional, this is the def
 
 or answer "y" when `./setup.sh` asks. The setting is global, but the mounts are only added for
 sbt projects: the project directory must contain `build.sbt` (or any other `*.sbt` file) or
-`project/build.properties`. Other projects are left alone and never trigger the first-use copy
-below. On the first sbt session, `~/.sbt`, the Coursier cache
-(`~/.cache/coursier`, or `~/Library/Caches/Coursier` on macOS) and `~/.ivy2` are copied into
-`sbt/`, `coursier/` and `ivy2/` below `sbt_cache_dir` and mounted read-write at
-`/home/coder/.sbt`, `/home/coder/.cache/coursier` and `/home/coder/.ivy2`. Nothing is ever
-copied back to the host.
+`project/build.properties`. Other projects are left alone and never get the directories created.
+On the first sbt session, empty `sbt/`, `coursier/` and `ivy2/` directories are created below
+`sbt_cache_dir` and mounted read-write at `/home/coder/.sbt`, `/home/coder/.cache/coursier` and
+`/home/coder/.ivy2`. Nothing is copied from the host (your own caches are usually large and full
+of artifacts of unrelated projects) and nothing is ever copied back to it: the first session
+downloads what it needs, and later sessions reuse it.
 
 ```bash
 ./opencode-dockerized.sh sbt-cache status   # enabled? where? how big?
-./opencode-dockerized.sh sbt-cache seed     # pre-copy now instead of on first run
-./opencode-dockerized.sh sbt-cache reset    # delete the copy and re-copy from the host
+./opencode-dockerized.sh sbt-cache seed     # create the empty directories now instead of on first run
+./opencode-dockerized.sh sbt-cache reset    # empty the directories, keeping them in place
 ```
 
 Things to know:
 
-- The copy may contain your sbt credentials (`~/.sbt/1.0/credentials`), so it is visible to the
-  agent. Delete them from the copy if you do not want that.
-- Once seeded, the copy is not re-synced; dependencies the container needs are simply fetched
-  into it. Use `sbt-cache reset` to start over from the host's current state.
+- Because the private `~/.sbt` starts empty, your host's sbt configuration is not visible in the
+  container: no `1.0/credentials`, `repositories` file or global plugins. Builds that need a
+  private repository must be configured in the project itself or inside the private directory
+  (`<sbt_cache_dir>/sbt`). The flip side is that your credentials are not exposed to the agent.
+- Directories left over from an earlier version that copied the host's caches are kept as they
+  are. Run `sbt-cache reset` to empty them.
 - This does not change the project's shared `target/` directory. If the container's JDK
   (Temurin 21) differs from the host's, Zinc may still recompile when you switch sides.
 
@@ -540,7 +542,7 @@ Things to know:
 Containers run with `--rm`, so `uv sync` / `uv run` download every wheel again on each launch (the
 project environment lives inside the container at `/home/coder/.venv`). Mounting your host's
 `~/.cache/uv` read-write would fix that, but then the container could plant a tampered wheel that
-your host uv later installs. This opt-in setting keeps a **private copy** instead:
+your host uv later installs. This opt-in setting keeps a **private, initially empty cache directory** instead:
 
 ```ini
 setting.uv_cache_support=true
@@ -549,15 +551,15 @@ setting.uv_cache_dir=~/.cache/opencode-dockerized   # optional, this is the defa
 
 or answer "y" when `./setup.sh` asks. The mount is only added for Python projects: the project
 directory must contain `pyproject.toml`, `uv.lock`, `requirements.txt`, `setup.py`, `setup.cfg` or
-`Pipfile`. On the first such session, the host's uv cache (`$UV_CACHE_DIR`, else
-`$XDG_CACHE_HOME/uv`, else `~/.cache/uv`, or `~/Library/Caches/uv` on macOS) is copied to `uv/`
-below `uv_cache_dir` and mounted read-write at `/home/coder/.cache/uv`. Nothing is ever copied
-back to the host.
+`Pipfile`. On the first such session, an empty `uv/` directory is created below `uv_cache_dir`
+and mounted read-write at `/home/coder/.cache/uv`. Nothing is copied from the host's uv cache and
+nothing is ever copied back to it: the first session downloads what it needs, and later
+sessions reuse it.
 
 ```bash
 ./opencode-dockerized.sh uv-cache status   # enabled? where? how big?
-./opencode-dockerized.sh uv-cache seed     # pre-copy now instead of on first run
-./opencode-dockerized.sh uv-cache reset    # delete the copy and re-copy from the host
+./opencode-dockerized.sh uv-cache seed     # create the empty directory now instead of on first run
+./opencode-dockerized.sh uv-cache reset    # empty the directory, keeping it in place
 ```
 
 Things to know:
@@ -565,8 +567,8 @@ Things to know:
 - The packages are still installed into the (fresh) environment of each container, but from the
   cache instead of the network. The container sets `UV_LINK_MODE=copy`, because the cache and the
   environment are on different filesystems and cannot be hardlinked.
-- Once seeded, the copy is not re-synced. Use `uv-cache reset` to start over from the host's
-  current state. The Python interpreters and tools baked into the image
+- A directory left over from an earlier version that copied the host's cache is kept as it is.
+  Run `uv-cache reset` to empty it. The Python interpreters and tools baked into the image
   (`~/.local/share/uv`) are not affected.
 
 ### Matt Pocock's Agent Skills

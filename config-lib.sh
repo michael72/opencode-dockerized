@@ -80,11 +80,11 @@ LLM_INTERCEPTOR_PORT=9090        # Port the host-side 'lli watch' proxy listens 
 LLM_INTERCEPTOR_CAPTURE_LOCAL=false  # Also proxy loopback, so a local model (llama-server) is captured
 GRAPHIFY_SUPPORT=true            # Boolean flag for the per-project graphify knowledge graph (opt-out)
 MATT_POCOCK_SKILLS_SUPPORT=false # Boolean flag for Matt Pocock's agent skills (~/.agents/skills)
-SBT_CACHE_SUPPORT=false          # Boolean flag for a container-private copy of the sbt/Coursier/Ivy caches
-: "${SBT_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding that copy (sbt/, coursier/, ivy2/)
-UV_CACHE_SUPPORT=false           # Boolean flag for a container-private copy of the uv package cache
+SBT_CACHE_SUPPORT=false          # Boolean flag for container-private sbt/Coursier/Ivy caches
+: "${SBT_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding them (sbt/, coursier/, ivy2/)
+UV_CACHE_SUPPORT=false           # Boolean flag for a container-private uv package cache
 # Not called UV_CACHE_DIR: that is uv's own variable and would be picked up from the host's environment
-: "${UV_PRIVATE_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding that copy (uv/)
+: "${UV_PRIVATE_CACHE_DIR:=$HOME/.cache/opencode-dockerized}"  # Host directory holding it (uv/)
 
 # ============================================
 # SHARED HELPERS
@@ -118,26 +118,22 @@ ensure_opencode_dirs() {
     mkdir -p "$HOME/.bun/install/cache" 2>/dev/null || true
 }
 
-# Seed one cache directory from the host's own on first use.
-# The copy is made next to the target and renamed into place, so an interrupted copy
-# is never mistaken for a seeded cache. An existing target is left untouched.
-# Usage: seed_cache_dir "/host/source" "/private/target"
-seed_cache_dir() {
-    local src="$1"
-    local dst="$2"
+# Create one private cache directory if it is missing. Existing contents are left alone.
+# Nothing is copied from the host: the container fills the cache itself on first use.
+# Usage: create_cache_dir "/private/target"
+create_cache_dir() {
+    mkdir -p "$1" 2>/dev/null || true
+}
 
-    [ -d "$dst" ] && return 0
+# Empty one private cache directory, dotfiles included, and keep the directory itself
+# (it is created when missing).
+# Usage: clear_cache_dir "/private/target"
+clear_cache_dir() {
+    local dir="$1"
 
-    if [ -d "$src" ]; then
-        config_info "Seeding $dst from $src (first use only, this can take a while)..."
-        rm -rf "$dst.seeding"
-        if cp -a "$src" "$dst.seeding" && mv "$dst.seeding" "$dst"; then
-            return 0
-        fi
-        rm -rf "$dst.seeding"
-        config_warning "Could not copy $src — starting with an empty cache"
-    fi
-    mkdir -p "$dst" 2>/dev/null || true
+    [ -n "$dir" ] && [ "$dir" != "/" ] && [ "$dir" != "$HOME" ] || return 1
+    mkdir -p "$dir" 2>/dev/null || return 1
+    find "$dir" -mindepth 1 -delete
 }
 
 # Succeeds when the directory is the root of an sbt build. Only that directory is
@@ -156,21 +152,15 @@ is_sbt_project() {
     return 1
 }
 
-# Create the container-private sbt, Coursier and Ivy caches under $SBT_CACHE_DIR.
-# They are copies, so whatever the container writes (including a tampered jar or a
-# global sbt plugin) never reaches the host's own ~/.sbt or Coursier cache.
+# Create the container-private sbt, Coursier and Ivy cache directories under
+# $SBT_CACHE_DIR. They start empty and are separate from the host's own ~/.sbt and
+# Coursier cache, so whatever the container writes (including a tampered jar or a
+# global sbt plugin) never reaches the host.
 # Usage: ensure_sbt_cache_dirs
 ensure_sbt_cache_dirs() {
-    local coursier_src="$HOME/.cache/coursier"
-    # macOS keeps the Coursier cache elsewhere; the layout below it (v1/...) is the same
-    if [ ! -d "$coursier_src" ] && [ -d "$HOME/Library/Caches/Coursier" ]; then
-        coursier_src="$HOME/Library/Caches/Coursier"
-    fi
-
-    mkdir -p "$SBT_CACHE_DIR" 2>/dev/null || true
-    seed_cache_dir "$HOME/.sbt" "$SBT_CACHE_DIR/sbt"
-    seed_cache_dir "$coursier_src" "$SBT_CACHE_DIR/coursier"
-    seed_cache_dir "$HOME/.ivy2" "$SBT_CACHE_DIR/ivy2"
+    create_cache_dir "$SBT_CACHE_DIR/sbt"
+    create_cache_dir "$SBT_CACHE_DIR/coursier"
+    create_cache_dir "$SBT_CACHE_DIR/ivy2"
 
     # Without this check a failed mkdir goes unnoticed, and 'docker run -v' would then
     # create the missing host path itself, root-owned and unwritable for the container
@@ -197,20 +187,12 @@ is_python_project() {
     return 1
 }
 
-# Create the container-private uv package cache under $UV_PRIVATE_CACHE_DIR/uv.
-# It is a copy, so whatever the container writes (including a tampered wheel) never
-# reaches the host's own uv cache.
+# Create the container-private uv package cache directory under $UV_PRIVATE_CACHE_DIR/uv.
+# It starts empty and is separate from the host's own uv cache, so whatever the
+# container writes (including a tampered wheel) never reaches the host.
 # Usage: ensure_uv_cache_dirs
 ensure_uv_cache_dirs() {
-    # Where the host's uv keeps its cache: UV_CACHE_DIR, else XDG_CACHE_HOME, else ~/.cache
-    local uv_src="${UV_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/uv}"
-    # macOS keeps it elsewhere; the layout below it is the same
-    if [ ! -d "$uv_src" ] && [ -d "$HOME/Library/Caches/uv" ]; then
-        uv_src="$HOME/Library/Caches/uv"
-    fi
-
-    mkdir -p "$UV_PRIVATE_CACHE_DIR" 2>/dev/null || true
-    seed_cache_dir "$uv_src" "$UV_PRIVATE_CACHE_DIR/uv"
+    create_cache_dir "$UV_PRIVATE_CACHE_DIR/uv"
 
     # Same reason as for sbt: a failed mkdir would let 'docker run -v' create a root-owned path
     if [ ! -d "$UV_PRIVATE_CACHE_DIR/uv" ] || [ ! -w "$UV_PRIVATE_CACHE_DIR/uv" ]; then
@@ -528,10 +510,10 @@ build_standard_volume_args() {
         VOLUME_ARGS+=(-v "$HOME/.bun/install/cache:/home/coder/.bun/install/cache")
     fi
 
-    # sbt, Coursier and Ivy caches (opt-in) — a private, persistent copy of the host's,
+    # sbt, Coursier and Ivy caches (opt-in) — private, persistent and initially empty,
     # so sbt does not start cold in every --rm container and the host's own caches
     # stay out of the container's reach. Only for sbt projects: the setting is global,
-    # and other projects should not trigger the (large) first-use copy.
+    # and other projects should not get the directories created.
     if [ "$SBT_CACHE_SUPPORT" = true ] && is_sbt_project "$project_dir"; then
         if ensure_sbt_cache_dirs; then
             VOLUME_ARGS+=(
@@ -544,7 +526,7 @@ build_standard_volume_args() {
         fi
     fi
 
-    # uv package cache (opt-in) — a private, persistent copy of the host's, so wheels are
+    # uv package cache (opt-in) — private, persistent and initially empty, so wheels are
     # not downloaded again in every --rm container. Only for Python projects, for the same
     # reason as the sbt cache. The interpreters and tools baked into the image live in
     # ~/.local/share/uv and are deliberately not touched.
@@ -650,9 +632,9 @@ init_config_file() {
 
 # sbt / Coursier / Ivy caches (for Scala projects)
 # Containers use --rm, so sbt would otherwise start cold on every run (boot dir,
-# dependency resolution, compiler bridge). When enabled, a private copy of ~/.sbt,
-# the Coursier cache and ~/.ivy2 is kept in sbt_cache_dir, seeded from the host on
-# first use, and mounted read-write. The host's own caches are never exposed.
+# dependency resolution, compiler bridge). When enabled, private ~/.sbt, Coursier and
+# ~/.ivy2 directories are kept in sbt_cache_dir, start empty (nothing is copied from the
+# host) and are mounted read-write. The host's own caches are never exposed.
 # Global setting, but only applied to sbt projects (a *.sbt file or
 # project/build.properties in the project directory).
 # Manage it with './opencode-dockerized.sh sbt-cache [seed|status|reset]'.
@@ -661,8 +643,8 @@ init_config_file() {
 
 # uv package cache (for Python projects)
 # Containers use --rm, so uv would otherwise download every wheel again on each run.
-# When enabled, a private copy of the host's uv cache is kept in uv_cache_dir, seeded
-# from the host on first use, and mounted read-write. The host's own cache is never exposed.
+# When enabled, a private uv cache is kept in uv_cache_dir, starts empty (nothing is
+# copied from the host) and is mounted read-write. The host's own cache is never exposed.
 # Global setting, but only applied to Python projects (pyproject.toml, uv.lock,
 # requirements.txt, setup.py, setup.cfg or Pipfile in the project directory).
 # Manage it with './opencode-dockerized.sh uv-cache [seed|status|reset]'.
@@ -787,14 +769,14 @@ save_config() {
         echo "# See: https://github.com/mattpocock/skills"
         echo "setting.matt_pocock_skills_support=$MATT_POCOCK_SKILLS_SUPPORT"
         echo ""
-        echo "# sbt / Coursier / Ivy caches: a private copy, seeded from the host on first use,"
-        echo "# so sbt does not start cold in every --rm container. The host's own caches are"
+        echo "# sbt / Coursier / Ivy caches: private, initially empty directories, so sbt does"
+        echo "# not start cold in every --rm container. The host's own caches are"
         echo "# never exposed. Manage with './opencode-dockerized.sh sbt-cache [seed|status|reset]'."
         echo "setting.sbt_cache_support=$SBT_CACHE_SUPPORT"
         echo "setting.sbt_cache_dir=$SBT_CACHE_DIR"
         echo ""
-        echo "# uv package cache: a private copy, seeded from the host on first use, so uv does"
-        echo "# not download every wheel again in each --rm container. The host's own cache is"
+        echo "# uv package cache: a private, initially empty directory, so uv does not"
+        echo "# download every wheel again in each --rm container. The host's own cache is"
         echo "# never exposed. Manage with './opencode-dockerized.sh uv-cache [seed|status|reset]'."
         echo "setting.uv_cache_support=$UV_CACHE_SUPPORT"
         echo "setting.uv_cache_dir=$UV_PRIVATE_CACHE_DIR"
@@ -1303,7 +1285,7 @@ prompt_matt_pocock_skills_support() {
     fi
 }
 
-# Interactive prompt for the private sbt/Coursier/Ivy cache copy
+# Interactive prompt for the private sbt/Coursier/Ivy caches
 # SBT_CACHE_SUPPORT defaults to false, so the question is phrased as an opt-in
 prompt_sbt_cache_support() {
     echo ""
@@ -1320,9 +1302,9 @@ prompt_sbt_cache_support() {
         fi
     else
         echo "Containers use --rm, so sbt starts cold on every run: it re-boots, re-resolves"
-        echo "dependencies and recompiles the compiler bridge. When enabled, a private copy"
-        echo "of ~/.sbt, the Coursier cache and ~/.ivy2 is kept in $SBT_CACHE_DIR,"
-        echo "seeded from the host on first use. The host's own caches are never exposed."
+        echo "dependencies and recompiles the compiler bridge. When enabled, private (initially"
+        echo "empty) ~/.sbt, Coursier and ~/.ivy2 directories are kept in $SBT_CACHE_DIR."
+        echo "Nothing is copied from the host and the host's own caches are never exposed."
         echo ""
 
         read -r -p "Enable the private sbt cache? (y/N): " sbt_cache
@@ -1340,7 +1322,7 @@ prompt_sbt_cache_support() {
     fi
 }
 
-# Interactive prompt for the private uv package cache copy
+# Interactive prompt for the private uv package cache
 # UV_CACHE_SUPPORT defaults to false, so the question is phrased as an opt-in
 prompt_uv_cache_support() {
     echo ""
@@ -1357,8 +1339,8 @@ prompt_uv_cache_support() {
         fi
     else
         echo "Containers use --rm, so uv downloads every wheel again on each run. When"
-        echo "enabled, a private copy of the host's uv cache is kept in $UV_PRIVATE_CACHE_DIR,"
-        echo "seeded from the host on first use. The host's own cache is never exposed."
+        echo "enabled, a private (initially empty) uv cache is kept in $UV_PRIVATE_CACHE_DIR."
+        echo "Nothing is copied from the host and the host's own cache is never exposed."
         echo ""
 
         read -r -p "Enable the private uv cache? (y/N): " uv_cache

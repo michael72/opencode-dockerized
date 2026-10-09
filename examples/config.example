@@ -38,9 +38,9 @@
 
 # sbt / Coursier / Ivy caches (Scala projects)
 # Containers use --rm, so sbt would otherwise start cold on every run (boot dir,
-# dependency resolution, compiler bridge). When enabled, a private copy of ~/.sbt,
-# the Coursier cache and ~/.ivy2 lives in sbt_cache_dir, is seeded from the host on
-# first use and mounted read-write. The host's own caches are never exposed, so the
+# dependency resolution, compiler bridge). When enabled, private ~/.sbt,
+# Coursier and ~/.ivy2 directories live in sbt_cache_dir, start empty (nothing is copied
+# from the host) and are mounted read-write. The host's own caches are never exposed, so the
 # container cannot plant a global sbt plugin or a tampered jar that the host would run.
 # Global setting, but only applied to sbt projects (a *.sbt file or
 # project/build.properties in the project directory).
@@ -51,8 +51,8 @@
 
 # uv package cache (Python projects)
 # Containers use --rm, so uv would otherwise download every wheel again on each run.
-# When enabled, a private copy of the host's uv cache lives in uv_cache_dir, is seeded
-# from the host on first use and mounted read-write. The host's own cache is never exposed.
+# When enabled, a private uv cache lives in uv_cache_dir, starts empty (nothing is
+# copied from the host) and is mounted read-write. The host's own cache is never exposed.
 # Global setting, but only applied to Python projects (pyproject.toml, uv.lock,
 # requirements.txt, setup.py, setup.cfg or Pipfile in the project directory).
 # Manage it with: opencode-dockerized.sh uv-cache [status|seed|reset]
