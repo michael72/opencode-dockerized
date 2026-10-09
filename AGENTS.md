@@ -34,6 +34,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 ./opencode-dockerized.sh config edit    # Edit config in $EDITOR
 ./opencode-dockerized.sh config path    # Print config file path
 ./opencode-dockerized.sh sbt-cache [status|seed|reset]  # Manage the private sbt/Coursier/Ivy cache copy
+./opencode-dockerized.sh uv-cache [status|seed|reset]   # Manage the private uv package cache copy
 ./opencode-dockerized.sh clean          # Remove Docker image
 ./opencode-dockerized.sh help           # Show help
 DRY_RUN=true ./opencode-dockerized.sh run  # Print docker command without running
@@ -166,6 +167,8 @@ setting.graphify_support=true
 setting.matt_pocock_skills_support=false
 setting.sbt_cache_support=false
 setting.sbt_cache_dir=~/.cache/opencode-dockerized
+setting.uv_cache_support=false
+setting.uv_cache_dir=~/.cache/opencode-dockerized
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 ```
@@ -221,4 +224,5 @@ acts on also need an `-e` entry in `build_common_docker_args`.
 | `$SBT_CACHE_DIR/sbt` | `/home/coder/.sbt` | rw | With `setting.sbt_cache_support`, and only when the project is an sbt build (`is_sbt_project`): private copy of the host's `~/.sbt`, seeded on first use (never the host's own directory) |
 | `$SBT_CACHE_DIR/coursier` | `/home/coder/.cache/coursier` | rw | Same setting: private copy of the Coursier cache |
 | `$SBT_CACHE_DIR/ivy2` | `/home/coder/.ivy2` | rw | Same setting: private copy of `~/.ivy2`. `SBT_CACHE_DIR` defaults to `~/.cache/opencode-dockerized` (`setting.sbt_cache_dir`) |
+| `$UV_PRIVATE_CACHE_DIR/uv` | `/home/coder/.cache/uv` | rw | With `setting.uv_cache_support`, and only when the project is a Python project (`is_python_project`): private copy of the host's uv cache, seeded on first use (never the host's own directory). Also sets `UV_LINK_MODE=copy`. `UV_PRIVATE_CACHE_DIR` defaults to `~/.cache/opencode-dockerized` (`setting.uv_cache_dir`); the interpreters/tools in the image's `~/.local/share/uv` are not touched |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | rw | Docker socket |

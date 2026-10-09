@@ -49,6 +49,17 @@
 # setting.sbt_cache_support=true
 # setting.sbt_cache_dir=~/.cache/opencode-dockerized
 
+# uv package cache (Python projects)
+# Containers use --rm, so uv would otherwise download every wheel again on each run.
+# When enabled, a private copy of the host's uv cache lives in uv_cache_dir, is seeded
+# from the host on first use and mounted read-write. The host's own cache is never exposed.
+# Global setting, but only applied to Python projects (pyproject.toml, uv.lock,
+# requirements.txt, setup.py, setup.cfg or Pipfile in the project directory).
+# Manage it with: opencode-dockerized.sh uv-cache [status|seed|reset]
+#
+# setting.uv_cache_support=true
+# setting.uv_cache_dir=~/.cache/opencode-dockerized
+
 # ============================================
 # Custom Volume Mounts
 # ============================================
