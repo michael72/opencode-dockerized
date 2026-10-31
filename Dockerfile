@@ -41,8 +41,10 @@ RUN apt-get update && apt-get install -y \
     bzip2 \
     graphviz \
     xxd \
+    libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 # graphviz and xxd needed by plantuml
+# libatomic1 is dynamically linked by recent official Node.js binaries (installed via nvm below)
 
 RUN update-locale 
 
