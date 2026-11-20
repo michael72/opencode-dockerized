@@ -42,8 +42,11 @@ RUN apt-get update && apt-get install -y \
     graphviz \
     xxd \
     libatomic1 \
-    && rm -rf /var/lib/apt/lists/*
+    bat \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/batcat /usr/local/bin/bat
 # graphviz and xxd needed by plantuml
+# Debian ships bat as 'batcat' (name clash); the symlink also provides 'bat'
 # libatomic1 is dynamically linked by recent official Node.js binaries (installed via nvm below)
 
 RUN update-locale 

@@ -7,7 +7,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 **Key files:**
 - `opencode-dockerized.sh` — Main wrapper (build, run, tmux, auth, models, exec, mcp, plugin, stats, debug, update, config, clean commands)
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
-- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + git-delta + OpenCode V2 (`@opencode/cli`)). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` and writes `.opencode/command/*.md` wrappers for the user-invoked ones when `setting.matt_pocock_skills_support` is on
+- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + git-delta + bat + OpenCode V2 (`@opencode/cli`)). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` and writes `.opencode/command/*.md` wrappers for the user-invoked ones when `setting.matt_pocock_skills_support` is on
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
 - `setup.sh` — First-time config directory initialization
 - `SETUP.md` — User-facing guide to every `setup.sh` choice and its security implications. Update it when a prompt, setting, mount, or Dockerfile download changes
