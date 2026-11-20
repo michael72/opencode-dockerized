@@ -394,7 +394,7 @@ privileges of `coder` (which has `sudo`), and several items are unpinned or inst
 | OpenCode CLI | npm `@opencode/cli@latest` | **latest** | NVM bin dir |
 | Matt Pocock skills | `npx skills@latest add mattpocock/skills` | **latest** | `/opt/matt-pocock-skills` (data, not binaries) |
 | Docker CLI, buildx, compose | Docker's apt repository, signed key | latest in repo | `/usr/bin` |
-| `git-delta` (`delta`) | GitHub release `.deb` from `dandavison/delta` (no checksum check) | pinned (`DELTA_VERSION`, 0.18.2) | `/usr/bin` |
+| `git-delta` (`delta`) | GitHub release `.deb` from `dandavison/delta` (no checksum check) | **latest** (`DELTA_VERSION` build arg to pin) | `/usr/bin` |
 
 What this means in practice:
 

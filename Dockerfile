@@ -60,17 +60,6 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get install -y docker-ce-cli docker-buildx-plugin docker-compose-plugin && \
     rm -rf /var/lib/apt/lists/*
 
-# Install git-delta (syntax-highlighting pager for git diff/log/show)
-# Not packaged for bookworm, so the pinned upstream .deb is used.
-# See: https://github.com/dandavison/delta
-ARG DELTA_VERSION=0.18.2
-RUN arch="$(dpkg --print-architecture)" && \
-    curl -fsSL -o /tmp/git-delta.deb \
-        "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/git-delta_${DELTA_VERSION}_${arch}.deb" && \
-    apt-get install -y /tmp/git-delta.deb && \
-    rm -f /tmp/git-delta.deb && \
-    delta --version
-
 # Create non-root user
 # Note: Docker socket group membership is handled dynamically in entrypoint.sh
 # based on the host's actual Docker socket GID
@@ -138,6 +127,28 @@ RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g @opencode/cli@latest"
 
 # Switch back to root for entrypoint setup
 USER root
+
+# Install git-delta (syntax-highlighting pager for git diff/log/show) from the
+# upstream .deb. DELTA_VERSION=latest resolves the newest release tag via the
+# github.com/.../releases/latest redirect (no API call, so no rate limit); pass
+# --build-arg DELTA_VERSION=x.y.z to pin. The layer sits after the
+# OPENCODE_BUILD_TIME ARG, so './opencode-dockerized.sh update' refreshes it.
+# See: https://github.com/dandavison/delta
+ARG DELTA_VERSION=latest
+RUN version="$DELTA_VERSION" && \
+    if [ "$version" = "latest" ]; then \
+        latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+            https://github.com/dandavison/delta/releases/latest)" && \
+        version="${latest_url##*/}"; \
+    fi && \
+    arch="$(dpkg --print-architecture)" && \
+    echo "Installing git-delta ${version} (${arch})" && \
+    curl -fsSL -o /tmp/git-delta.deb \
+        "https://github.com/dandavison/delta/releases/download/${version}/git-delta_${version}_${arch}.deb" && \
+    apt-get update && \
+    apt-get install -y /tmp/git-delta.deb && \
+    rm -rf /tmp/git-delta.deb /var/lib/apt/lists/* && \
+    delta --version
 
 # Matt Pocock's agent skills, staged in the image (opt-in via
 # setting.matt_pocock_skills_support — entrypoint.sh copies them into
