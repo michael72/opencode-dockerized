@@ -218,6 +218,24 @@ Add error handling to the login function
 Let's add a new feature for user profiles
 ```
 
+#### tmux session
+
+`run` (and `run-simple.sh`) start OpenCode inside a tmux session named `opencode` in the
+container, so you don't need to start tmux yourself. The session ends when OpenCode exits.
+Use it to get a shell next to OpenCode, e.g. for `git diff` / `git log` paged through
+[git-delta](https://github.com/dandavison/delta):
+
+| Keys | Action |
+|------|--------|
+| `Ctrl-b c` | New window with a shell (same project directory) |
+| `Ctrl-b n` / `Ctrl-b p` | Next / previous window |
+| `Ctrl-b d` | Detach — this stops the container, as nothing stays attached |
+
+The settings in `/etc/tmux.conf` are tuned for the TUI: no Esc delay, truecolor, mouse passed
+through to OpenCode (hold Shift to select text natively in most terminals), and OSC 52 clipboard.
+If you already run tmux on the host, this is a tmux inside a tmux: press `Ctrl-b` twice to
+send the prefix to the inner one. Scripted commands (`exec`, `mcp`, `stats`, …) do not use tmux.
+
 ## 🔧 Configuration
 
 ### Environment Variables

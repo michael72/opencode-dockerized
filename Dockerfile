@@ -178,6 +178,21 @@ RUN mkdir -p /home/coder/.config/opencode && \
     mkdir -p /home/coder/.m2 && \
     chown -R coder:coder /home/coder
 
+# System-wide tmux settings: 'run' starts OpenCode inside tmux (wrap_in_tmux in
+# config-lib.sh). escape-time 0 keeps Esc instant in the TUI; RGB keeps truecolor
+# themes; mouse on forwards scrolling/clicks to OpenCode; passthrough and
+# set-clipboard let OSC 52 copy reach the host terminal.
+RUN printf '%s\n' \
+    'set -s escape-time 0' \
+    'set -g default-terminal "tmux-256color"' \
+    'set -as terminal-features ",*:RGB"' \
+    'set -g mouse on' \
+    'set -g focus-events on' \
+    'set -g history-limit 50000' \
+    'set -g allow-passthrough on' \
+    'set -s set-clipboard on' \
+    > /etc/tmux.conf
+
 # Default working directory (overridden at runtime by --workdir)
 WORKDIR /
 

@@ -187,6 +187,7 @@ run_opencode() {
     build_common_docker_args
     build_standard_volume_args "$project_dir" true
     build_standalone_cmd opencode --standalone
+    wrap_in_tmux
 
     # Build the full docker run command as an array
     # CONTAINER_WORKDIR is set by build_standard_volume_args (host path with $HOME stripped)

@@ -369,6 +369,18 @@ build_standalone_cmd() {
     )
 }
 
+# Run the interactive TUI inside a tmux session in the container.
+# Prefixes STANDALONE_CMD (built by build_standalone_cmd) so the session's only
+# pane runs it; tmux exits when OpenCode does. With several arguments tmux execs
+# the command directly (no extra shell quoting). Terminal tools such as git-delta
+# can then run next to OpenCode in a second tmux window (Ctrl-b c).
+# Settings live in /etc/tmux.conf (see Dockerfile).
+# Only for interactive 'run' — scripted commands must stay pipeable.
+# shellcheck disable=SC2034  # STANDALONE_CMD is used by callers that source this file
+wrap_in_tmux() {
+    STANDALONE_CMD=(tmux new-session -s opencode -- "${STANDALONE_CMD[@]}")
+}
+
 # Build common Docker run arguments shared by run_opencode and run_auth
 # Populates DOCKER_COMMON_ARGS array
 # Usage: build_common_docker_args
