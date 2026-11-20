@@ -5,7 +5,7 @@
 Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in secure, isolated containers. Sandboxes OpenCode so its blast radius is limited to the mounted project directory. Supports the [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode) plugin. All source is Bash shell scripts and a Dockerfile — no compiled code, no JS/Python source, no package manager files.
 
 **Key files:**
-- `opencode-dockerized.sh` — Main wrapper (build, run, auth, models, exec, mcp, plugin, stats, debug, update, config, clean commands)
+- `opencode-dockerized.sh` — Main wrapper (build, run, tmux, auth, models, exec, mcp, plugin, stats, debug, update, config, clean commands)
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
 - `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + git-delta + OpenCode V2 (`@opencode/cli`)). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` and writes `.opencode/command/*.md` wrappers for the user-invoked ones when `setting.matt_pocock_skills_support` is on
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
@@ -22,6 +22,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 # Core operations
 ./opencode-dockerized.sh build          # Build Docker image (uses layer cache)
 ./opencode-dockerized.sh run [DIR]      # Run OpenCode (default: current dir)
+./opencode-dockerized.sh tmux [DIR]     # Same as run, but inside a tmux session in the container
 ./opencode-dockerized.sh auth           # Authenticate OpenCode
 ./opencode-dockerized.sh models [DIR]   # List models available to configured providers
 ./opencode-dockerized.sh exec MSG       # Non-interactive prompt (opencode run)
@@ -136,7 +137,7 @@ All volume mount logic lives in `config-lib.sh` to eliminate duplication:
 - `sanitize_container_name "$name"` — strips invalid Docker container name characters
 - `generate_random_suffix` — produces random hex for unique container names
 - `build_standalone_cmd opencode ... --standalone ...` — populates `STANDALONE_CMD`. Every command that uses `--standalone` goes through it: while `llm_interceptor_capture_local=true` loopback is proxied, so the private server is started on `$PRIVATE_SERVER_HOST` (`127.0.0.2`, always in the container's `NO_PROXY`) and the client attached with `--server`. Otherwise the command is unchanged
-- `wrap_in_tmux` — prefixes `STANDALONE_CMD` with `tmux new-session -s opencode --`. Called only for the interactive `run` (both runners), never for scripted commands that must stay pipeable. tmux settings are in `/etc/tmux.conf`, written by the Dockerfile
+- `wrap_in_tmux` — prefixes `STANDALONE_CMD` with `tmux new-session -s opencode --`. Called only by the `tmux` command (`run` with a tmux wrapper); `run`, `run-simple.sh` and scripted commands don't use it. tmux settings are in `/etc/tmux.conf`, written by the Dockerfile
 
 ### Main Entry Point Pattern
 

@@ -167,6 +167,7 @@ After installation, you'll get:
 opencode-dockerized build          # Build Docker image
 opencode-dockerized auth           # Authenticate with LLM provider
 opencode-dockerized run [DIR]      # Run OpenCode (default: current dir)
+opencode-dockerized tmux [DIR]     # Same, inside a tmux session (review sessions)
 opencode-dockerized models         # List available models
 opencode-dockerized exec "..."     # Non-interactive prompt
 opencode-dockerized mcp list       # MCP servers and their status
@@ -220,10 +221,10 @@ Let's add a new feature for user profiles
 
 #### tmux session
 
-`run` (and `run-simple.sh`) start OpenCode inside a tmux session named `opencode` in the
-container, so you don't need to start tmux yourself. The session ends when OpenCode exits.
-Use it to get a shell next to OpenCode, e.g. for `git diff` / `git log` paged through
-[git-delta](https://github.com/dandavison/delta):
+`ocd tmux [DIR]` is `run` with a tmux wrapper: OpenCode starts inside a tmux session named
+`opencode` in the container, and the session ends when OpenCode exits. Use it for review
+sessions where you want a shell next to OpenCode, e.g. for `git diff` / `git log` paged through
+[git-delta](https://github.com/dandavison/delta). Plain `run` does not use tmux.
 
 | Keys | Action |
 |------|--------|
@@ -234,7 +235,8 @@ Use it to get a shell next to OpenCode, e.g. for `git diff` / `git log` paged th
 The settings in `/etc/tmux.conf` are tuned for the TUI: no Esc delay, truecolor, mouse passed
 through to OpenCode (hold Shift to select text natively in most terminals), and OSC 52 clipboard.
 If you already run tmux on the host, this is a tmux inside a tmux: press `Ctrl-b` twice to
-send the prefix to the inner one. Scripted commands (`exec`, `mcp`, `stats`, …) do not use tmux.
+send the prefix to the inner one. tmux reports success however OpenCode exits, so `ocd tmux`
+cannot show OpenCode's exit status.
 
 ## 🔧 Configuration
 

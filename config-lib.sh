@@ -375,7 +375,7 @@ build_standalone_cmd() {
 # the command directly (no extra shell quoting). Terminal tools such as git-delta
 # can then run next to OpenCode in a second tmux window (Ctrl-b c).
 # Settings live in /etc/tmux.conf (see Dockerfile).
-# Only for interactive 'run' — scripted commands must stay pipeable.
+# Only used by the 'tmux' command — 'run' and scripted commands stay without it.
 # shellcheck disable=SC2034  # STANDALONE_CMD is used by callers that source this file
 wrap_in_tmux() {
     STANDALONE_CMD=(tmux new-session -s opencode -- "${STANDALONE_CMD[@]}")
