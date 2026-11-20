@@ -60,6 +60,17 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get install -y docker-ce-cli docker-buildx-plugin docker-compose-plugin && \
     rm -rf /var/lib/apt/lists/*
 
+# Install git-delta (syntax-highlighting pager for git diff/log/show)
+# Not packaged for bookworm, so the pinned upstream .deb is used.
+# See: https://github.com/dandavison/delta
+ARG DELTA_VERSION=0.18.2
+RUN arch="$(dpkg --print-architecture)" && \
+    curl -fsSL -o /tmp/git-delta.deb \
+        "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/git-delta_${DELTA_VERSION}_${arch}.deb" && \
+    apt-get install -y /tmp/git-delta.deb && \
+    rm -f /tmp/git-delta.deb && \
+    delta --version
+
 # Create non-root user
 # Note: Docker socket group membership is handled dynamically in entrypoint.sh
 # based on the host's actual Docker socket GID

@@ -877,7 +877,7 @@ opencode-dockerized update
 
 1. **Base Image**: Uses Debian Bookworm slim for minimal footprint
 2. **Docker CLI Only**: Installs only Docker CLI (uses host's Docker daemon via socket)
-3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv), Bun, ast-grep, tmux, Git, and essential CLI tools
+3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv), Bun, ast-grep, tmux, Git, git-delta, and essential CLI tools
 4. **OpenCode Installation**: Installs latest OpenCode V2 (`@opencode/cli`) via npm
 5. **Oh My OpenCode Support**: Pre-configured with tools needed for oh-my-opencode plugin (ast-grep, tmux, bun)
 6. **User Management**: Creates non-root `coder` user with UID/GID matching
