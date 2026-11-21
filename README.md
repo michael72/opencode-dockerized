@@ -243,6 +243,22 @@ terminal (e.g. WezTerm, foot, Konsole, mlterm, Windows Terminal, recent xterm wi
 tmux detects this itself. Check with `tmux display -p '#{client_termfeatures}'` inside the
 session; `sixel` must be listed.
 
+#### Diffs with git-delta
+
+git in the container pages through `delta-auto` (set in `/etc/gitconfig`; a `core.pager` in your
+own `~/.gitconfig` takes precedence). It shows a diff **side-by-side** only when that helps and
+**unified** otherwise:
+
+| Side-by-side when all of these hold | Default | Override |
+|---|---|---|
+| The smaller of added / removed lines is at least this share of all changed lines (so pure additions, deletions or "mostly new code" stay unified) | 25 % | `DELTA_AUTO_MIN_SHARE` |
+| The terminal is at least this wide | 160 columns | `DELTA_AUTO_MIN_COLUMNS` |
+| At most this many lines changed (a long `git log -p` reads better unified) | 2000 | `DELTA_AUTO_MAX_LINES` |
+
+`DELTA_SIDE_BY_SIDE=1 git diff` (or `=0`) forces a view. The decision covers the whole output of one
+git command, not each file. Also set: `interactive.diffFilter = delta --color-only` (colored
+`git add -p`) and `delta.navigate = true` (`n` / `N` jump between files).
+
 To draw a diagram, run `puml-show` in a shell window (`Ctrl-b c`):
 
 ```bash

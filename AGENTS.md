@@ -12,6 +12,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 - `setup.sh` — First-time config directory initialization
 - `SETUP.md` — User-facing guide to every `setup.sh` choice and its security implications. Update it when a prompt, setting, mount, or Dockerfile download changes
 - `puml-show.sh` — Installed in the image as `/usr/local/bin/puml-show`: renders PlantUML in the terminal via `pumlcli -t png` + `img2sixel` (falls back to `pumlcli -t txt` when tmux reports no Sixel support)
+- `delta-auto.sh` — Installed in the image as `/usr/local/bin/delta-auto` and set as `core.pager` in `/etc/gitconfig`: runs delta `--side-by-side` only if the smaller of added/removed lines is ≥ 25% of the changes, the terminal is ≥ 160 columns and ≤ 2000 lines changed; unified otherwise (`DELTA_SIDE_BY_SIDE=1|0` forces)
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
 - `config.example` — Example user config (INI-style), in `examples/`
 - `.dockerignore` — Excludes non-essential files from Docker build context

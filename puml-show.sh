@@ -94,15 +94,15 @@ main() {
 
     # Render to a temp file first, so a pumlcli error is reported as such
     # instead of feeding garbage to img2sixel
-    local png
-    png=$(mktemp --suffix=.png)
-    trap 'rm -f "$png"' EXIT
-    pumlcli "${input_args[@]}" -o "$png" -t png
-    if [ ! -s "$png" ]; then
+    # (global, not local: the EXIT trap runs after main has returned)
+    PNG_FILE=$(mktemp --suffix=.png)
+    trap 'rm -f "$PNG_FILE"' EXIT
+    pumlcli "${input_args[@]}" -o "$PNG_FILE" -t png
+    if [ ! -s "$PNG_FILE" ]; then
         echo "puml-show: pumlcli produced no image (is pumlsrv running?)" >&2
         exit 1
     fi
-    img2sixel "${scale_args[@]}" "$png"
+    img2sixel "${scale_args[@]}" "$PNG_FILE"
 }
 
 main "$@"

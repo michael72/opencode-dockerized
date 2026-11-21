@@ -249,6 +249,15 @@ WORKDIR /
 COPY puml-show.sh /usr/local/bin/puml-show
 RUN chmod 755 /usr/local/bin/puml-show
 
+# delta-auto: git pager that runs delta side-by-side only when both sides have
+# changes and the terminal is wide enough, unified otherwise.
+# System-wide git config, so settings in a mounted ~/.gitconfig still win.
+COPY delta-auto.sh /usr/local/bin/delta-auto
+RUN chmod 755 /usr/local/bin/delta-auto && \
+    git config --system core.pager delta-auto && \
+    git config --system interactive.diffFilter "delta --color-only" && \
+    git config --system delta.navigate true
+
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
