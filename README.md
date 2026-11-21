@@ -235,7 +235,13 @@ sessions where you want a shell next to OpenCode, e.g. for `git diff` / `git log
 The settings in `/etc/tmux.conf` are tuned for the TUI: no Esc delay, truecolor, mouse passed
 through to OpenCode (hold Shift to select text natively in most terminals), and OSC 52 clipboard.
 If you already run tmux on the host, this is a tmux inside a tmux: press `Ctrl-b` twice to
-send the prefix to the inner one. tmux reports success however OpenCode exits, so `ocd tmux`
+send the prefix to the inner one.
+
+tmux is built from source with **Sixel** support (Debian's package has none), so graphical output
+such as PlantUML diagrams from `pumlcli` can be shown in a pane. It needs a Sixel-capable host
+terminal (e.g. WezTerm, foot, Konsole, mlterm, Windows Terminal, recent xterm with `-ti vt340`);
+tmux detects this itself. Check with `tmux display -p '#{client_termfeatures}'` inside the
+session; `sixel` must be listed. tmux reports success however OpenCode exits, so `ocd tmux`
 cannot show OpenCode's exit status.
 
 ## 🔧 Configuration

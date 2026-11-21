@@ -1,3 +1,42 @@
+# --- tmux-build: tmux from source with Sixel image support ----------------
+# Debian's tmux is built without Sixel, so graphical output (e.g. PlantUML
+# diagrams rendered with pumlcli) cannot be shown inside a tmux pane. Sixel is
+# only passed on when the outer terminal reports support for it (tmux detects
+# this itself). TMUX_VERSION=latest resolves the newest
+# release tag via the github.com/.../releases/latest redirect (no API call);
+# pass --build-arg TMUX_VERSION=x.y to pin. Only /out/usr/local is copied into
+# the final image, so the compiler toolchain stays out of it.
+# See: https://github.com/tmux/tmux
+FROM debian:bookworm-slim AS tmux-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    bison \
+    libevent-dev \
+    libncurses-dev \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ARG TMUX_VERSION=latest
+# Same cache-busting ARG as below, so './opencode-dockerized.sh update' also
+# picks up a new tmux release
+ARG OPENCODE_BUILD_TIME=0
+WORKDIR /build
+RUN version="$TMUX_VERSION" && \
+    if [ "$version" = "latest" ]; then \
+        latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+            https://github.com/tmux/tmux/releases/latest)" && \
+        version="${latest_url##*/}"; \
+    fi && \
+    echo "Building tmux ${version} with Sixel support" && \
+    curl -fsSL "https://github.com/tmux/tmux/releases/download/${version}/tmux-${version}.tar.gz" \
+        | tar -xz --strip-components=1 && \
+    ./configure --prefix=/usr/local --enable-sixel && \
+    make -j"$(nproc)" && \
+    make install-strip DESTDIR=/out && \
+    /out/usr/local/bin/tmux -V
+
+# --- final image -------------------------------------------------------------
 # Use Debian slim as lightweight Linux base
 # Note: We only install Docker CLI to use host's Docker daemon via mounted socket
 FROM debian:bookworm-slim
@@ -28,7 +67,7 @@ RUN apt-get update && apt-get install -y \
     tree \
     less \
     procps \
-    tmux \
+    libevent-core-2.1-7 \
     lsof \
     tzdata \
     p11-kit \
@@ -47,6 +86,7 @@ RUN apt-get update && apt-get install -y \
     && ln -s /usr/bin/batcat /usr/local/bin/bat
 # graphviz and xxd needed by plantuml
 # Debian ships bat as 'batcat' (name clash); the symlink also provides 'bat'
+# libevent-core-2.1-7 is the runtime library of tmux (built from source in tmux-build)
 # libatomic1 is dynamically linked by recent official Node.js binaries (installed via nvm below)
 
 RUN update-locale 
@@ -153,6 +193,10 @@ RUN version="$DELTA_VERSION" && \
     rm -rf /tmp/git-delta.deb /var/lib/apt/lists/* && \
     delta --version
 
+# tmux with Sixel support, built in the tmux-build stage above
+COPY --from=tmux-build /out/usr/local/ /usr/local/
+RUN tmux -V
+
 # Matt Pocock's agent skills, staged in the image (opt-in via
 # setting.matt_pocock_skills_support — entrypoint.sh copies them into
 # ~/.agents/skills at launch when the setting is on).
@@ -181,8 +225,8 @@ RUN mkdir -p /home/coder/.config/opencode && \
     mkdir -p /home/coder/.m2 && \
     chown -R coder:coder /home/coder
 
-# System-wide tmux settings: 'run' starts OpenCode inside tmux (wrap_in_tmux in
-# config-lib.sh). escape-time 0 keeps Esc instant in the TUI; RGB keeps truecolor
+# System-wide tmux settings: the 'tmux' command starts OpenCode inside tmux
+# (wrap_in_tmux in config-lib.sh). escape-time 0 keeps Esc instant in the TUI; RGB keeps truecolor
 # themes; mouse on forwards scrolling/clicks to OpenCode; passthrough and
 # set-clipboard let OSC 52 copy reach the host terminal.
 RUN printf '%s\n' \
