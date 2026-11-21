@@ -241,7 +241,19 @@ tmux is built from source with **Sixel** support (Debian's package has none), so
 such as PlantUML diagrams from `pumlcli` can be shown in a pane. It needs a Sixel-capable host
 terminal (e.g. WezTerm, foot, Konsole, mlterm, Windows Terminal, recent xterm with `-ti vt340`);
 tmux detects this itself. Check with `tmux display -p '#{client_termfeatures}'` inside the
-session; `sixel` must be listed. tmux reports success however OpenCode exits, so `ocd tmux`
+session; `sixel` must be listed.
+
+To draw a diagram, run `puml-show` in a shell window (`Ctrl-b c`):
+
+```bash
+puml-show docs/architecture.puml          # Sixel image in the terminal
+puml-show -w 1200 docs/architecture.puml  # scaled to 1200 px wide (-H: height)
+cat diagram.puml | puml-show              # from STDIN
+puml-show -a diagram.puml                 # ASCII art instead (pumlcli -t txt)
+```
+
+It renders through `pumlcli` as PNG and converts it with `img2sixel`. If the tmux client does not
+report Sixel support it falls back to ASCII art; `-s` forces Sixel. Outside tmux, Sixel is assumed. tmux reports success however OpenCode exits, so `ocd tmux`
 cannot show OpenCode's exit status.
 
 ## 🔧 Configuration

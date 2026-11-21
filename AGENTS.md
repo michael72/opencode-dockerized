@@ -11,6 +11,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
 - `setup.sh` — First-time config directory initialization
 - `SETUP.md` — User-facing guide to every `setup.sh` choice and its security implications. Update it when a prompt, setting, mount, or Dockerfile download changes
+- `puml-show.sh` — Installed in the image as `/usr/local/bin/puml-show`: renders PlantUML in the terminal via `pumlcli -t png` + `img2sixel` (falls back to `pumlcli -t txt` when tmux reports no Sixel support)
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
 - `config.example` — Example user config (INI-style), in `examples/`
 - `.dockerignore` — Excludes non-essential files from Docker build context

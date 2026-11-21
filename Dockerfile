@@ -82,10 +82,12 @@ RUN apt-get update && apt-get install -y \
     xxd \
     libatomic1 \
     bat \
+    libsixel-bin \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/batcat /usr/local/bin/bat
 # graphviz and xxd needed by plantuml
 # Debian ships bat as 'batcat' (name clash); the symlink also provides 'bat'
+# libsixel-bin provides img2sixel, used by puml-show to draw diagrams in the terminal
 # libevent-core-2.1-7 is the runtime library of tmux (built from source in tmux-build)
 # libatomic1 is dynamically linked by recent official Node.js binaries (installed via nvm below)
 
@@ -242,6 +244,10 @@ RUN printf '%s\n' \
 
 # Default working directory (overridden at runtime by --workdir)
 WORKDIR /
+
+# puml-show: render PlantUML in the terminal (pumlcli -> PNG -> img2sixel)
+COPY puml-show.sh /usr/local/bin/puml-show
+RUN chmod 755 /usr/local/bin/puml-show
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
