@@ -167,6 +167,7 @@ After installation, you'll get:
 opencode-dockerized build          # Build Docker image
 opencode-dockerized auth           # Authenticate with LLM provider
 opencode-dockerized run [DIR]      # Run OpenCode (default: current dir)
+opencode-dockerized tmux [DIR]     # Same, inside a tmux session (review sessions)
 opencode-dockerized models         # List available models
 opencode-dockerized exec "..."     # Non-interactive prompt
 opencode-dockerized mcp list       # MCP servers and their status
@@ -217,6 +218,59 @@ Add error handling to the login function
 <TAB>  # Switch to Plan mode
 Let's add a new feature for user profiles
 ```
+
+#### tmux session
+
+`ocd tmux [DIR]` is `run` with a tmux wrapper: OpenCode starts inside a tmux session named
+`opencode` in the container, and the session ends when OpenCode exits. Use it for review
+sessions where you want a shell next to OpenCode, e.g. for `git diff` / `git log` paged through
+[git-delta](https://github.com/dandavison/delta). Plain `run` does not use tmux.
+
+| Keys | Action |
+|------|--------|
+| `Ctrl-b c` | New window with a shell (same project directory) |
+| `Ctrl-b n` / `Ctrl-b p` | Next / previous window |
+| `Ctrl-b d` | Detach — this stops the container, as nothing stays attached |
+
+The settings in `/etc/tmux.conf` are tuned for the TUI: no Esc delay, truecolor, mouse passed
+through to OpenCode (hold Shift to select text natively in most terminals), and OSC 52 clipboard.
+If you already run tmux on the host, this is a tmux inside a tmux: press `Ctrl-b` twice to
+send the prefix to the inner one.
+
+tmux is built from source with **Sixel** support (Debian's package has none), so graphical output
+such as PlantUML diagrams from `pumlcli` can be shown in a pane. It needs a Sixel-capable host
+terminal (e.g. WezTerm, foot, Konsole, mlterm, Windows Terminal, recent xterm with `-ti vt340`);
+tmux detects this itself. Check with `tmux display -p '#{client_termfeatures}'` inside the
+session; `sixel` must be listed.
+
+#### Diffs with git-delta
+
+git in the container pages through `delta-auto` (set in `/etc/gitconfig`; a `core.pager` in your
+own `~/.gitconfig` takes precedence). It shows a diff **side-by-side** only when that helps and
+**unified** otherwise:
+
+| Side-by-side when all of these hold | Default | Override |
+|---|---|---|
+| The smaller of added / removed lines is at least this share of all changed lines (so pure additions, deletions or "mostly new code" stay unified) | 25 % | `DELTA_AUTO_MIN_SHARE` |
+| The terminal is at least this wide | 160 columns | `DELTA_AUTO_MIN_COLUMNS` |
+| At most this many lines changed (a long `git log -p` reads better unified) | 2000 | `DELTA_AUTO_MAX_LINES` |
+
+`DELTA_SIDE_BY_SIDE=1 git diff` (or `=0`) forces a view. The decision covers the whole output of one
+git command, not each file. Also set: `interactive.diffFilter = delta --color-only` (colored
+`git add -p`) and `delta.navigate = true` (`n` / `N` jump between files).
+
+To draw a diagram, run `puml-show` in a shell window (`Ctrl-b c`):
+
+```bash
+puml-show docs/architecture.puml          # Sixel image in the terminal
+puml-show -w 1200 docs/architecture.puml  # scaled to 1200 px wide (-H: height)
+cat diagram.puml | puml-show              # from STDIN
+puml-show -a diagram.puml                 # ASCII art instead (pumlcli -t txt)
+```
+
+It renders through `pumlcli` as PNG and converts it with `img2sixel`. If the tmux client does not
+report Sixel support it falls back to ASCII art; `-s` forces Sixel. Outside tmux, Sixel is assumed. tmux reports success however OpenCode exits, so `ocd tmux`
+cannot show OpenCode's exit status.
 
 ## 🔧 Configuration
 
@@ -877,7 +931,7 @@ opencode-dockerized update
 
 1. **Base Image**: Uses Debian Bookworm slim for minimal footprint
 2. **Docker CLI Only**: Installs only Docker CLI (uses host's Docker daemon via socket)
-3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv), Bun, ast-grep, tmux, Git, and essential CLI tools
+3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv), Bun, ast-grep, tmux, Git, git-delta, bat (`batcat`), and essential CLI tools
 4. **OpenCode Installation**: Installs latest OpenCode V2 (`@opencode/cli`) via npm
 5. **Oh My OpenCode Support**: Pre-configured with tools needed for oh-my-opencode plugin (ast-grep, tmux, bun)
 6. **User Management**: Creates non-root `coder` user with UID/GID matching
