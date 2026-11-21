@@ -83,10 +83,13 @@ RUN apt-get update && apt-get install -y \
     libatomic1 \
     bat \
     libsixel-bin \
+    ncurses-term \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/batcat /usr/local/bin/bat
 # graphviz and xxd needed by plantuml
 # Debian ships bat as 'batcat' (name clash); the symlink also provides 'bat'
+# ncurses-term adds terminfo entries for terminals such as foot, wezterm, alacritty
+# and mlterm; without them tmux refuses to start ("missing or unsuitable terminal")
 # libsixel-bin provides img2sixel, used by puml-show to draw diagrams in the terminal
 # libevent-core-2.1-7 is the runtime library of tmux (built from source in tmux-build)
 # libatomic1 is dynamically linked by recent official Node.js binaries (installed via nvm below)

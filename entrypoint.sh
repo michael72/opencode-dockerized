@@ -438,6 +438,14 @@ if [ "${LLM_INTERCEPTOR_SUPPORT:-false}" = "true" ]; then
     fi
 fi
 
+# The host's TERM is passed in, but the container may lack its terminfo entry
+# (ncurses-term covers most terminals). tmux refuses to start without one and
+# other TUIs misbehave, so fall back to a widely compatible entry.
+if [ -n "${TERM:-}" ] && ! infocmp "$TERM" >/dev/null 2>&1; then
+    echo "TERM=$TERM has no terminfo entry in the container, using xterm-256color" >&2
+    export TERM=xterm-256color
+fi
+
 # start local plantuml server to use with `pumlcli`
 pumlsrv-server &
 

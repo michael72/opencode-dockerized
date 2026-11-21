@@ -240,7 +240,9 @@ send the prefix to the inner one.
 tmux is built from source with **Sixel** support (Debian's package has none), so graphical output
 such as PlantUML diagrams from `pumlcli` can be shown in a pane. It needs a Sixel-capable host
 terminal (e.g. WezTerm, foot, Konsole, mlterm, Windows Terminal, recent xterm with `-ti vt340`);
-tmux detects this itself. Check with `tmux display -p '#{client_termfeatures}'` inside the
+tmux detects this itself. Terminal definitions for foot, WezTerm, Alacritty, mlterm etc.
+come from `ncurses-term`; for an unknown `TERM` the entrypoint falls back to `xterm-256color`
+(tmux would otherwise fail with *missing or unsuitable terminal*). Check with `tmux display -p '#{client_termfeatures}'` inside the
 session; `sixel` must be listed.
 
 #### Diffs with git-delta
