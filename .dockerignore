@@ -15,7 +15,7 @@ LICENSE
 examples/
 
 # Shell scripts not used inside the container
-# Only entrypoint.sh is COPYed into the image
+# Only entrypoint.sh, puml-show.sh and delta-auto.sh are COPYed into the image
 opencode-dockerized.sh
 completions/
 run-simple.sh

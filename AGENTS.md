@@ -5,12 +5,14 @@
 Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in secure, isolated containers. Sandboxes OpenCode so its blast radius is limited to the mounted project directory. Supports the [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode) plugin. All source is Bash shell scripts and a Dockerfile — no compiled code, no JS/Python source, no package manager files.
 
 **Key files:**
-- `opencode-dockerized.sh` — Main wrapper (build, run, auth, models, exec, mcp, plugin, stats, debug, update, config, clean commands)
+- `opencode-dockerized.sh` — Main wrapper (build, run, tmux, auth, models, exec, mcp, plugin, stats, debug, update, config, clean commands)
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
-- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode V2 (`@opencode/cli`)). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` and writes `.opencode/command/*.md` wrappers for the user-invoked ones when `setting.matt_pocock_skills_support` is on
+- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + git-delta + bat + tmux with Sixel (built from source in a `tmux-build` stage) + OpenCode V2 (`@opencode/cli`)). Also stages [Matt Pocock's skills](https://github.com/mattpocock/skills) under `/opt/matt-pocock-skills/.agents/skills`; `entrypoint.sh` copies them to `~/.agents/skills` and writes `.opencode/command/*.md` wrappers for the user-invoked ones when `setting.matt_pocock_skills_support` is on
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
 - `setup.sh` — First-time config directory initialization
 - `SETUP.md` — User-facing guide to every `setup.sh` choice and its security implications. Update it when a prompt, setting, mount, or Dockerfile download changes
+- `puml-show.sh` — Installed in the image as `/usr/local/bin/puml-show`: renders PlantUML in the terminal via `pumlcli -t png` + `img2sixel` (falls back to `pumlcli -t txt` when tmux reports no Sixel support)
+- `delta-auto.sh` — Installed in the image as `/usr/local/bin/delta-auto` and set as `core.pager` in `/etc/gitconfig`: runs delta `--side-by-side` only if the smaller of added/removed lines is ≥ 25% of the changes, the terminal is ≥ 160 columns and ≤ 2000 lines changed; unified otherwise (`DELTA_SIDE_BY_SIDE=1|0` forces)
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
 - `config.example` — Example user config (INI-style), in `examples/`
 - `.dockerignore` — Excludes non-essential files from Docker build context
@@ -22,6 +24,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 # Core operations
 ./opencode-dockerized.sh build          # Build Docker image (uses layer cache)
 ./opencode-dockerized.sh run [DIR]      # Run OpenCode (default: current dir)
+./opencode-dockerized.sh tmux [DIR]     # Same as run, but inside a tmux session in the container
 ./opencode-dockerized.sh auth           # Authenticate OpenCode
 ./opencode-dockerized.sh models [DIR]   # List models available to configured providers
 ./opencode-dockerized.sh exec MSG       # Non-interactive prompt (opencode run)
@@ -136,6 +139,7 @@ All volume mount logic lives in `config-lib.sh` to eliminate duplication:
 - `sanitize_container_name "$name"` — strips invalid Docker container name characters
 - `generate_random_suffix` — produces random hex for unique container names
 - `build_standalone_cmd opencode ... --standalone ...` — populates `STANDALONE_CMD`. Every command that uses `--standalone` goes through it: while `llm_interceptor_capture_local=true` loopback is proxied, so the private server is started on `$PRIVATE_SERVER_HOST` (`127.0.0.2`, always in the container's `NO_PROXY`) and the client attached with `--server`. Otherwise the command is unchanged
+- `wrap_in_tmux` — prefixes `STANDALONE_CMD` with `tmux new-session -s opencode --`. Called only by the `tmux` command (`run` with a tmux wrapper); `run`, `run-simple.sh` and scripted commands don't use it. tmux settings are in `/etc/tmux.conf`, written by the Dockerfile
 
 ### Main Entry Point Pattern
 

@@ -8,6 +8,7 @@ _opencode_dockerized() {
     local -a commands
     commands=(
         'run:Run OpenCode in Docker (default: current directory)'
+        'tmux:Like run, but inside a tmux session in the container'
         'auth:Run OpenCode authentication (opencode auth login)'
         'models:List models available to the configured providers'
         'exec:Run a non-interactive prompt (opencode run)'
@@ -35,7 +36,7 @@ _opencode_dockerized() {
             ;;
         args)
             case $words[1] in
-                run|models)
+                run|tmux|models)
                     _files -/
                     ;;
                 mcp)

@@ -8,11 +8,11 @@ _opencode_dockerized() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="run auth models exec mcp plugin stats debug build update version config sbt-cache uv-cache clean help --help -h"
+    opts="run tmux auth models exec mcp plugin stats debug build update version config sbt-cache uv-cache clean help --help -h"
 
     case "${prev}" in
-        run|models)
-            # Complete directory paths for run command
+        run|tmux|models)
+            # Complete directory paths for run/tmux commands
             mapfile -t COMPREPLY < <(compgen -d -- "${cur}")
             return 0
             ;;

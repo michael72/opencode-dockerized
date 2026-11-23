@@ -1,3 +1,42 @@
+# --- tmux-build: tmux from source with Sixel image support ----------------
+# Debian's tmux is built without Sixel, so graphical output (e.g. PlantUML
+# diagrams rendered with pumlcli) cannot be shown inside a tmux pane. Sixel is
+# only passed on when the outer terminal reports support for it (tmux detects
+# this itself). TMUX_VERSION=latest resolves the newest
+# release tag via the github.com/.../releases/latest redirect (no API call);
+# pass --build-arg TMUX_VERSION=x.y to pin. Only /out/usr/local is copied into
+# the final image, so the compiler toolchain stays out of it.
+# See: https://github.com/tmux/tmux
+FROM debian:bookworm-slim AS tmux-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    bison \
+    libevent-dev \
+    libncurses-dev \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ARG TMUX_VERSION=latest
+# Same cache-busting ARG as below, so './opencode-dockerized.sh update' also
+# picks up a new tmux release
+ARG OPENCODE_BUILD_TIME=0
+WORKDIR /build
+RUN version="$TMUX_VERSION" && \
+    if [ "$version" = "latest" ]; then \
+        latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+            https://github.com/tmux/tmux/releases/latest)" && \
+        version="${latest_url##*/}"; \
+    fi && \
+    echo "Building tmux ${version} with Sixel support" && \
+    curl -fsSL "https://github.com/tmux/tmux/releases/download/${version}/tmux-${version}.tar.gz" \
+        | tar -xz --strip-components=1 && \
+    ./configure --prefix=/usr/local --enable-sixel && \
+    make -j"$(nproc)" && \
+    make install-strip DESTDIR=/out && \
+    /out/usr/local/bin/tmux -V
+
+# --- final image -------------------------------------------------------------
 # Use Debian slim as lightweight Linux base
 # Note: We only install Docker CLI to use host's Docker daemon via mounted socket
 FROM debian:bookworm-slim
@@ -28,7 +67,7 @@ RUN apt-get update && apt-get install -y \
     tree \
     less \
     procps \
-    tmux \
+    libevent-core-2.1-7 \
     lsof \
     tzdata \
     p11-kit \
@@ -42,11 +81,32 @@ RUN apt-get update && apt-get install -y \
     graphviz \
     xxd \
     libatomic1 \
-    && rm -rf /var/lib/apt/lists/*
+    bat \
+    libsixel-bin \
+    ncurses-term \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/batcat /usr/local/bin/bat
 # graphviz and xxd needed by plantuml
+# Debian ships bat as 'batcat' (name clash); the symlink also provides 'bat'
+# ncurses-term adds terminfo entries for terminals such as wezterm, alacritty
+# and mlterm; without them tmux refuses to start ("missing or unsuitable terminal")
+# libsixel-bin provides img2sixel, used by puml-show to draw diagrams in the terminal
+# libevent-core-2.1-7 is the runtime library of tmux (built from source in tmux-build)
 # libatomic1 is dynamically linked by recent official Node.js binaries (installed via nvm below)
 
 RUN update-locale 
+
+# bookworm's ncurses-term ships only the 'foot+base' building block, not the
+# 'foot' entry itself. Compile it exactly as newer ncurses defines it, so foot
+# users keep TERM=foot instead of the entrypoint's xterm-256color fallback.
+RUN if ! infocmp foot >/dev/null 2>&1; then \
+        printf '%s\n' 'foot|foot terminal emulator,' \
+            '	oc=\E]104\E\\,' \
+            '	use=xterm+256color2, use=foot+base,' > /tmp/foot.src && \
+        tic -x -o /usr/share/terminfo /tmp/foot.src && \
+        rm /tmp/foot.src; \
+    fi && \
+    infocmp foot >/dev/null
 
 # Install Docker CLI only (uses host Docker daemon via mounted socket)
 # We don't need docker-ce (daemon) or containerd.io since we use the host's Docker
@@ -128,6 +188,32 @@ RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g @opencode/cli@latest"
 # Switch back to root for entrypoint setup
 USER root
 
+# Install git-delta (syntax-highlighting pager for git diff/log/show) from the
+# upstream .deb. DELTA_VERSION=latest resolves the newest release tag via the
+# github.com/.../releases/latest redirect (no API call, so no rate limit); pass
+# --build-arg DELTA_VERSION=x.y.z to pin. The layer sits after the
+# OPENCODE_BUILD_TIME ARG, so './opencode-dockerized.sh update' refreshes it.
+# See: https://github.com/dandavison/delta
+ARG DELTA_VERSION=latest
+RUN version="$DELTA_VERSION" && \
+    if [ "$version" = "latest" ]; then \
+        latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+            https://github.com/dandavison/delta/releases/latest)" && \
+        version="${latest_url##*/}"; \
+    fi && \
+    arch="$(dpkg --print-architecture)" && \
+    echo "Installing git-delta ${version} (${arch})" && \
+    curl -fsSL -o /tmp/git-delta.deb \
+        "https://github.com/dandavison/delta/releases/download/${version}/git-delta_${version}_${arch}.deb" && \
+    apt-get update && \
+    apt-get install -y /tmp/git-delta.deb && \
+    rm -rf /tmp/git-delta.deb /var/lib/apt/lists/* && \
+    delta --version
+
+# tmux with Sixel support, built in the tmux-build stage above
+COPY --from=tmux-build /out/usr/local/ /usr/local/
+RUN tmux -V
+
 # Matt Pocock's agent skills, staged in the image (opt-in via
 # setting.matt_pocock_skills_support — entrypoint.sh copies them into
 # ~/.agents/skills at launch when the setting is on).
@@ -156,8 +242,36 @@ RUN mkdir -p /home/coder/.config/opencode && \
     mkdir -p /home/coder/.m2 && \
     chown -R coder:coder /home/coder
 
+# System-wide tmux settings: the 'tmux' command starts OpenCode inside tmux
+# (wrap_in_tmux in config-lib.sh). escape-time 0 keeps Esc instant in the TUI; RGB keeps truecolor
+# themes; mouse on forwards scrolling/clicks to OpenCode; passthrough and
+# set-clipboard let OSC 52 copy reach the host terminal.
+RUN printf '%s\n' \
+    'set -s escape-time 0' \
+    'set -g default-terminal "tmux-256color"' \
+    'set -as terminal-features ",*:RGB"' \
+    'set -g mouse on' \
+    'set -g focus-events on' \
+    'set -g history-limit 50000' \
+    'set -g allow-passthrough on' \
+    'set -s set-clipboard on' \
+    > /etc/tmux.conf
+
 # Default working directory (overridden at runtime by --workdir)
 WORKDIR /
+
+# puml-show: render PlantUML in the terminal (pumlcli -> PNG -> img2sixel)
+COPY puml-show.sh /usr/local/bin/puml-show
+RUN chmod 755 /usr/local/bin/puml-show
+
+# delta-auto: git pager that runs delta side-by-side only when both sides have
+# changes and the terminal is wide enough, unified otherwise.
+# System-wide git config, so settings in a mounted ~/.gitconfig still win.
+COPY delta-auto.sh /usr/local/bin/delta-auto
+RUN chmod 755 /usr/local/bin/delta-auto && \
+    git config --system core.pager delta-auto && \
+    git config --system interactive.diffFilter "delta --color-only" && \
+    git config --system delta.navigate true
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

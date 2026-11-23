@@ -154,8 +154,11 @@ run_auth() {
 }
 
 # Function to run OpenCode
+# Usage: run_opencode [DIR] [use_tmux]
+# use_tmux=true starts the TUI inside a tmux session in the container ('tmux' command)
 run_opencode() {
     local project_dir="${1:-$(pwd)}"
+    local use_tmux="${2:-false}"
     local dry_run="${DRY_RUN:-false}"
 
     # Validate project directory exists
@@ -179,6 +182,7 @@ run_opencode() {
     print_info "Starting OpenCode in Docker..."
     print_info "Project directory: $project_dir"
     print_info "Container name: $container_name"
+    [ "$use_tmux" = true ] && print_info "Inside tmux session 'opencode' (Ctrl-b c: new window)"
 
     # Parse custom config and build docker arguments
     parse_config
@@ -187,6 +191,9 @@ run_opencode() {
     build_common_docker_args
     build_standard_volume_args "$project_dir" true
     build_standalone_cmd opencode --standalone
+    if [ "$use_tmux" = true ]; then
+        wrap_in_tmux
+    fi
 
     # Build the full docker run command as an array
     # CONTAINER_WORKDIR is set by build_standard_volume_args (host path with $HOME stripped)
@@ -471,6 +478,7 @@ Usage: $0 [COMMAND] [OPTIONS]
 
 Commands:
     run [DIR]           Run OpenCode in Docker (default: current directory)
+    tmux [DIR]          Like run, but inside a tmux session in the container
     auth                Run OpenCode authentication (opencode auth login)
     models [DIR]        List models available to the configured providers
     exec MSG [OPTS]     Run a non-interactive prompt (opencode run)
@@ -493,6 +501,7 @@ Environment Variables:
 Examples:
     $0 run                          # Run in current directory
     $0 run /path/to/project         # Run in specific directory
+    $0 tmux                         # Run inside tmux (extra windows: Ctrl-b c)
     $0 auth                         # Authenticate with your LLM provider
     $0 models                       # List available models
     $0 exec "Explain this repo"     # Non-interactive prompt
@@ -545,7 +554,11 @@ main() {
     case "$command" in
         run)
             check_config
-            run_opencode "$@"
+            run_opencode "${1:-}" false
+            ;;
+        tmux)
+            check_config
+            run_opencode "${1:-}" true
             ;;
         auth)
             run_auth
