@@ -88,13 +88,25 @@ RUN apt-get update && apt-get install -y \
     && ln -s /usr/bin/batcat /usr/local/bin/bat
 # graphviz and xxd needed by plantuml
 # Debian ships bat as 'batcat' (name clash); the symlink also provides 'bat'
-# ncurses-term adds terminfo entries for terminals such as foot, wezterm, alacritty
+# ncurses-term adds terminfo entries for terminals such as wezterm, alacritty
 # and mlterm; without them tmux refuses to start ("missing or unsuitable terminal")
 # libsixel-bin provides img2sixel, used by puml-show to draw diagrams in the terminal
 # libevent-core-2.1-7 is the runtime library of tmux (built from source in tmux-build)
 # libatomic1 is dynamically linked by recent official Node.js binaries (installed via nvm below)
 
 RUN update-locale 
+
+# bookworm's ncurses-term ships only the 'foot+base' building block, not the
+# 'foot' entry itself. Compile it exactly as newer ncurses defines it, so foot
+# users keep TERM=foot instead of the entrypoint's xterm-256color fallback.
+RUN if ! infocmp foot >/dev/null 2>&1; then \
+        printf '%s\n' 'foot|foot terminal emulator,' \
+            '	oc=\E]104\E\\,' \
+            '	use=xterm+256color2, use=foot+base,' > /tmp/foot.src && \
+        tic -x -o /usr/share/terminfo /tmp/foot.src && \
+        rm /tmp/foot.src; \
+    fi && \
+    infocmp foot >/dev/null
 
 # Install Docker CLI only (uses host Docker daemon via mounted socket)
 # We don't need docker-ce (daemon) or containerd.io since we use the host's Docker

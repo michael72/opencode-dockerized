@@ -240,8 +240,8 @@ send the prefix to the inner one.
 tmux is built from source with **Sixel** support (Debian's package has none), so graphical output
 such as PlantUML diagrams from `pumlcli` can be shown in a pane. It needs a Sixel-capable host
 terminal (e.g. WezTerm, foot, Konsole, mlterm, Windows Terminal, recent xterm with `-ti vt340`);
-tmux detects this itself. Terminal definitions for foot, WezTerm, Alacritty, mlterm etc.
-come from `ncurses-term`; for an unknown `TERM` the entrypoint falls back to `xterm-256color`
+tmux detects this itself. Terminal definitions for WezTerm, Alacritty, mlterm etc.
+come from `ncurses-term` (`foot` is compiled in the Dockerfile, bookworm lacks it); for an unknown `TERM` the entrypoint falls back to `xterm-256color`
 (tmux would otherwise fail with *missing or unsuitable terminal*). Check with `tmux display -p '#{client_termfeatures}'` inside the
 session; `sixel` must be listed.
 
@@ -892,8 +892,10 @@ opencode-dockerized build
 
 With foot 1.25.0 and OpenCode v2.3.2, `ocd run` crashes foot itself with
 `xsnprintf: No buffer space available (xsnprintf.c:42)`; `TERM=xterm-256color` does not help.
-Use `ocd tmux` instead: tmux sits between OpenCode and foot and answers OpenCode's terminal
-queries itself, so foot works fine (including Sixel).
+The trigger is the kitty notification query (OSC 99 with `p=?`) that OpenCode's TUI sends at
+startup — a foot bug, reproducible without OpenCode: `printf '\e]99;i=x:p=?;\e\\'`.
+Use `ocd tmux` instead: tmux does not pass that query on to foot, so foot works fine (including
+Sixel).
 
 ### OpenCode Not Updating
 
