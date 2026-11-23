@@ -888,6 +888,13 @@ docker rm -f opencode-dockerized
 opencode-dockerized build
 ```
 
+### foot Terminal Crashes on `run`
+
+With foot 1.25.0 and OpenCode v2.3.2, `ocd run` crashes foot itself with
+`xsnprintf: No buffer space available (xsnprintf.c:42)`; `TERM=xterm-256color` does not help.
+Use `ocd tmux` instead: tmux sits between OpenCode and foot and answers OpenCode's terminal
+queries itself, so foot works fine (including Sixel).
+
 ### OpenCode Not Updating
 
 ```bash
